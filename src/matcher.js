@@ -4,7 +4,7 @@
 // each in order. A guess can pick a choice by number ("two", "choice two",
 // "the second one") or by its title or an alias ("the beach", "go to the
 // forest"), or be one of the commands that work everywhere ("repeat",
-// "go back", "start over"). Anything unclear returns { kind: 'none' } so the
+// "go back", "start over", "add new node"). Anything unclear returns { kind: 'none' } so the
 // app can ask again, rather than guessing.
 
 export const COMMANDS = {
@@ -13,6 +13,9 @@ export const COMMANDS = {
     back: ['back', 'go back', 'previous', 'undo'],
     restart: ['restart', 'start over', 'start again', 'begin again', 'from the beginning', 'go to the beginning'],
     help: ['help', 'what can i say', 'what do i say'],
+    // Recognizers often hear "note" for "node".
+    add: ['add new node', 'add a new node', 'add node', 'new node', 'add new note', 'add a new note', 'add note',
+        'new note', 'add new page', 'add a new page', 'add a node', 'add a note'],
     stop: ['stop', 'pause', 'quiet', 'be quiet', 'stop listening', 'goodbye'],
 };
 

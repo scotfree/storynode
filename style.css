@@ -241,6 +241,51 @@ button:disabled {
     margin-right: 0.5rem;
 }
 
+/* "Add new node": smaller than the choices it sits under. */
+.add-link {
+    display: block;
+    margin: -1rem 0 2rem;
+    padding: 0.25rem 0;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 0.9rem;
+    text-decoration: underline;
+}
+
+.voice .add-link {
+    margin: 0;
+}
+
+.add-form h2 {
+    margin-top: 0;
+}
+
+.add-form label {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0.75rem 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+
+.add-form input,
+.add-form textarea {
+    font: inherit;
+    font-family: var(--serif);
+    font-size: 1.05rem;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    resize: vertical;
+}
+
+.add-form .row {
+    justify-content: flex-end;
+}
+
 .the-end {
     font-family: var(--serif);
     font-style: italic;

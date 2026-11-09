@@ -1,11 +1,11 @@
 // Unit tests for the pure modules. Run: node tests/run.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { loadStory, choicesOf, isEnding, parentsOf } from '../src/story.js';
+import { loadStory, choicesOf, isEnding, parentsOf, addNode, idFor } from '../src/story.js';
 import { match, numberFrom, commandFrom, titleHits, hintPhrases, normalize } from '../src/matcher.js';
 import { layoutGraph } from '../src/layout.js';
 import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from '../src/speech.js';
-import { pageScript, choicesScript, numberWord, retryScript } from '../src/script.js';
+import { pageScript, choicesScript, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
 import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
 
@@ -513,6 +513,59 @@ await testAsync('retries once without hints if they are rejected', async () => {
     const { alternatives, hintsRejected } = await session.promise;
     assert.deepEqual(alternatives, ['two']);
     assert.equal(hintsRejected, true);
+});
+
+section('adding a node');
+
+test('adds a node under its parent, as the last choice there', () => {
+    const { data, id, errors } = addNode(tiny, { parent: 'a', title: ' Go straight on! ', text: ' Ahead. ' });
+    assert.deepEqual(errors, []);
+    assert.equal(id, 'go-straight-on');
+    assert.deepEqual(data.nodes.at(-1), { id, title: 'Go straight on!', text: 'Ahead.', parent: 'a' });
+    assert.equal(tiny.nodes.length, 4);    // the original is untouched
+    const { story, errors: loadErrors } = loadStory(data);
+    assert.deepEqual(loadErrors, []);
+    assert.deepEqual(choicesOf(story, 'a').map(n => n.id), ['b', 'c', id]);
+});
+
+test('an ending stops being one when a node is added after it', () => {
+    const { data, id } = addNode(tiny, { parent: 'd', title: 'Carry on', text: 'More.' });
+    const { story } = loadStory(data);
+    assert.equal(isEnding(story, 'd'), false);
+    assert.equal(isEnding(story, id), true);
+});
+
+test('ids stay unique, and a title with no letters still gets one', () => {
+    assert.equal(idFor('Go left', ['go-left']), 'go-left-2');
+    assert.equal(idFor('Go left', ['go-left', 'go-left-2']), 'go-left-3');
+    assert.equal(idFor('???', []), 'node');
+    const { id } = addNode(tiny, { parent: 'a', title: 'A', text: 'x' });
+    assert.equal(id, 'a-2');
+});
+
+test('refuses a blank title, blank text or an unknown parent', () => {
+    assert.equal(addNode(tiny, { parent: 'a', title: ' ', text: 'x' }).errors.length, 1);
+    assert.equal(addNode(tiny, { parent: 'a', title: 'x', text: '' }).errors.length, 1);
+    const bad = addNode(tiny, { parent: 'nope', title: 'x', text: 'x' });
+    assert.equal(bad.errors.length, 1);
+    assert.equal(bad.data, tiny);
+});
+
+test('"add new node" is a command, however the recognizer spells it', () => {
+    for (const said of ['add new node', 'Add new note', 'add a new node please', 'new node']) {
+        assert.equal(commandFrom(said), 'add', said);
+    }
+    const choices = [{ id: 'b', title: 'Go left' }, { id: 'c', title: 'Go right' }];
+    assert.deepEqual(match(['add new note'], choices).name, 'add');
+    assert.equal(match(['add new node'], []).name, 'add');    // at an ending too
+});
+
+test('adding is never read out with the choices, only in help', () => {
+    const choices = [{ id: 'b', title: 'Go left' }, { id: 'c', title: 'Go right' }];
+    for (const list of [[], choices.slice(0, 1), choices]) {
+        assert.doesNotMatch(choicesScript(list), /add|new node/i);
+    }
+    assert.match(HELP_SCRIPT, /add new node/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

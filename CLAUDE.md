@@ -18,6 +18,7 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   counter cancels stale async steps when the user taps or changes mode.
 - `src/story.js`: the story model. Nodes have `id`, `title`, `text`, `parent` (string or
   list) and optional `aliases`; choices are the children. Validates ids, parents, loops.
+  `addNode` appends a node under a parent in the JSON form, making its id from the title.
 - `src/matcher.js`: turns recognizer guesses into a choice (number, title/alias) or a
   command. Picks a title only when it clearly wins on words no other choice has;
   otherwise returns `none` so the app asks again. Sound-alikes ("choice to" → 2) only
@@ -43,4 +44,7 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 - Repeat and Restart are disabled until the story has started: they fire mid-drag, which
   Safari doesn't accept as the gesture that unlocks speech.
 - No `continuous` recognition: it's the mode iOS Safari is reported to stall in.
+- "Add new node" is a voice command and a small link under the choices, never read out
+  as a choice. Added nodes are saved with the whole story in localStorage (no server yet);
+  anyone can add until roles exist.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

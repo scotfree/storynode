@@ -3,11 +3,11 @@
 //   #read  — a page of text, with the choices as buttons
 //   #voice — a big button: it reads the page and the choices, then listens
 
-import { loadStory, choicesOf, isEnding } from './story.js';
+import { loadStory, choicesOf, isEnding, addNode } from './story.js';
 import { layoutGraph } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices } from './speech.js';
-import { pageScript, choicesScript, HELP_SCRIPT, retryScript } from './script.js';
+import { pageScript, choicesScript, HELP_SCRIPT, retryScript, ADD_LABEL } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
 import { createSweep } from './arc.js';
 
@@ -35,6 +35,7 @@ const speaker = createSpeaker();
 const can = support();
 
 let story = null;
+let storyData = null;          // the story as JSON, so nodes can be added and saved
 let currentId = null;
 let history = [];              // ids before the current one, for Back
 const visited = new Set();
@@ -64,6 +65,7 @@ function useStory(data) {
     const { story: loaded, errors } = loadStory(data);
     if (errors.length) return errors;
     story = loaded;
+    storyData = data;
     history = [];
     visited.clear();
     goTo(story.start, { remember: false });
@@ -413,6 +415,8 @@ async function command(name, run) {
         case 'restart':
             restart();
             return voiceLoop(run);
+        case 'add':
+            return openAddDialog();
         case 'help':
             if (!(await say(HELP_SCRIPT, run))) return;
             return awaitAnswer(run);
@@ -688,6 +692,55 @@ function setUpVoiceSettings() {
     ].join(' ');
 }
 
+// --- adding a node ---
+//
+// Anyone can add a page after the one they're on: a title, some text, and it
+// becomes a new choice there. It's saved with the story in this browser.
+
+function openAddDialog() {
+    if (!story) return;
+    stopVoice();
+    setVoiceState('idle', voice.started ? '' : startHint());
+    $('add-form').reset();
+    $('add-parent').textContent = node().title;
+    $('add-errors').hidden = true;
+    $('add-dialog').showModal();
+    $('add-title').focus();
+}
+
+function submitAdd(e) {
+    e.preventDefault();
+    const { data, id, errors } = addNode(storyData, {
+        parent: currentId,
+        title: $('add-title').value,
+        text: $('add-text').value,
+    });
+    const problems = errors.length ? errors : loadStory(data).errors;
+    if (problems.length) {
+        $('add-errors').textContent = problems.join('\n');
+        $('add-errors').hidden = false;
+        return;
+    }
+    storyData = data;
+    story = loadStory(data).story;
+    writeJson(STORY_KEY, data);
+    $('add-dialog').close();
+    goTo(id);
+    window.scrollTo(0, 0);
+    // The submit is a tap, so voice mode can read the new page straight away.
+    if (mode() === 'voice' && voice.started) voiceLoop(voice.run);
+}
+
+function setUpAddDialog() {
+    $('add-heading').textContent = ADD_LABEL;
+    for (const id of ['read-add', 'voice-add']) {
+        $(id).textContent = ADD_LABEL;
+        $(id).addEventListener('click', openAddDialog);
+    }
+    $('add-cancel').addEventListener('click', () => $('add-dialog').close());
+    $('add-form').addEventListener('submit', submitAdd);
+}
+
 // --- story dialog ---
 
 function setUpStoryDialog() {
@@ -738,6 +791,7 @@ async function loadSample() {
 async function boot() {
     setUpVoiceSettings();
     setUpStoryDialog();
+    setUpAddDialog();
     setUpTalkButton();
     setUpArcControls();
     setUpVoiceLog();

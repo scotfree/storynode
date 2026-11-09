@@ -32,6 +32,7 @@
                 <div id="read-text" class="story-text"></div>
                 <ol id="read-choices" class="choices"></ol>
                 <p id="read-end" class="the-end" hidden>The end.</p>
+                <button id="read-add" class="add-link" type="button"></button>
                 <div class="row">
                     <button id="read-back" class="ghost">Back</button>
                     <button id="read-restart" class="ghost">Start over</button>
@@ -52,6 +53,7 @@
             </div>
             <p id="voice-status" class="voice-status" aria-live="polite"></p>
             <ol id="voice-choices" class="voice-choices"></ol>
+            <button id="voice-add" class="add-link" type="button"></button>
             <details class="voice-settings">
                 <summary>Voice settings</summary>
                 <label>Voice <select id="voice-select"></select></label>
@@ -74,6 +76,20 @@
             <button id="story-sample" class="ghost">Load the sample story</button>
             <button id="story-close">Close</button>
         </div>
+    </dialog>
+
+    <dialog id="add-dialog">
+        <form id="add-form" method="dialog" class="add-form">
+            <h2 id="add-heading"></h2>
+            <p class="hint">A new choice after <strong id="add-parent"></strong>.</p>
+            <label>Title <input id="add-title" type="text" maxlength="80" required autocomplete="off"></label>
+            <label>Text <textarea id="add-text" rows="7" required></textarea></label>
+            <p id="add-errors" class="errors" hidden></p>
+            <div class="row">
+                <button id="add-cancel" class="ghost" type="button">Cancel</button>
+                <button type="submit">Submit</button>
+            </div>
+        </form>
     </dialog>
 
     <dialog id="log-dialog" class="log-dialog">

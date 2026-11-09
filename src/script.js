@@ -17,7 +17,8 @@ export function choicesScript(choices) {
 }
 
 export const HELP_SCRIPT = 'Say a choice by its number, like choice one, or by its name. '
-    + 'You can also say repeat, choices, go back, or start over.';
+    + 'You can also say repeat, choices, go back, or start over. '
+    + 'To write a new page that follows this one, say add new node.';
 
 export function retryScript(attempt, { hold = false } = {}) {
     if (hold) {
@@ -29,3 +30,6 @@ export function retryScript(attempt, { hold = false } = {}) {
         ? "Sorry, I didn't catch that. Say a number, like choice one, or a choice's name."
         : 'Still not sure. Tap the button when you want to try again.';
 }
+
+// Never read out with the choices; it's a link on the page and a thing you can say.
+export const ADD_LABEL = 'Add new node';

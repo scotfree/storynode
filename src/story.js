@@ -89,3 +89,31 @@ export function choicesOf(story, id) {
 }
 
 export const isEnding = (story, id) => (story.children.get(id) ?? []).length === 0;
+
+// An id from a title: "Walk to the beach!" -> "walk-to-the-beach", with a
+// number on the end if that's taken.
+export function idFor(title, taken) {
+    const has = (id) => (taken instanceof Set ? taken.has(id) : taken.includes(id));
+    const base = String(title ?? '').toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'node';
+    if (!has(base)) return base;
+    let n = 2;
+    while (has(`${base}-${n}`)) n++;
+    return `${base}-${n}`;
+}
+
+// Adds a node under `parent` to story data (the JSON form, not a loaded
+// story). Returns { data, id, errors }; `data` is a new object, and is the
+// old one untouched when there are errors.
+export function addNode(data, { parent, title, text }) {
+    const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
+    const errors = [];
+    title = String(title ?? '').trim();
+    text = String(text ?? '').trim();
+    if (!title) errors.push('The node needs a title.');
+    if (!text) errors.push('The node needs some text.');
+    if (!nodes.some(n => n?.id === parent)) errors.push(`The parent "${parent}" doesn't exist.`);
+    if (errors.length) return { data, id: null, errors };
+    const id = idFor(title, nodes.map(n => n?.id));
+    return { data: { ...data, nodes: [...nodes, { id, title, text, parent }] }, id, errors };
+}

@@ -33,6 +33,12 @@ Three modes, sharing your place in the story:
   them. The panel at the bottom shows what it hears; tap it for a log of how
   each answer was matched.
 
+**Adding a node**: under the choices in Read and Voice there's a small "Add new
+node" link, and in Voice you can say "add new node" (it's never read out as a
+choice). Give it a title and some text and it becomes a new choice after the
+page you're on. Anyone can add for now. It's saved with the story in this
+browser only; loading the sample story again discards it.
+
 Voice works in Chrome and Safari (Firefox can't listen). Better voices help a
 lot: on a Mac or iPhone, download an "Enhanced" or "Premium" voice in the
 system's accessibility settings, then pick it under Voice settings.
