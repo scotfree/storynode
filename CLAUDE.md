@@ -27,6 +27,8 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   because Chrome cuts long ones off) and `SpeechRecognition` (`listenOnce`: fresh
   non-continuous sessions, re-armed while a press is held, merged into up to 5 guesses,
   phrase hints when supported, timeouts for sessions that never end).
+- `src/compose.js`: the spoken conversation for dictating a new node (title → read back →
+  text in parts until "done" → read back → save), as a pure step function.
 - `src/voicelog.js`: entries and wording for the voice log popup.
 - `src/arc.js`: tracks a drag around the big button as a signed sweep, for the arc
   controls (Repeat, Restart, mode dial).
@@ -46,5 +48,9 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 - No `continuous` recognition: it's the mode iOS Safari is reported to stall in.
 - "Add new node" is a voice command and a small link under the choices, never read out
   as a choice. Added nodes are saved with the whole story in localStorage (no server yet);
-  anyone can add until roles exist.
+  anyone can add until roles exist. The link opens a typed form; the voice command
+  dictates. Dictation keeps the recognizer's first guess word for word, so each part is
+  read back and confirmed, and its commands (done, scratch that, cancel) only count as
+  the whole utterance. Text comes in several short utterances, since there's no
+  `continuous` mode.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

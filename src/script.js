@@ -18,7 +18,7 @@ export function choicesScript(choices) {
 
 export const HELP_SCRIPT = 'Say a choice by its number, like choice one, or by its name. '
     + 'You can also say repeat, choices, go back, or start over. '
-    + 'To write a new page that follows this one, say add new node.';
+    + 'To add a new page that follows this one, say add new node, and I\'ll ask for its title and text.';
 
 export function retryScript(attempt, { hold = false } = {}) {
     if (hold) {

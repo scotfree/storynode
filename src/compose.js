@@ -1,0 +1,128 @@
+// Writing a new node by voice. Pure: app.js does the speaking and listening.
+//
+// A short conversation: ask for the title, read it back, ask for the text a
+// bit at a time until "done", read it back, then save. Unlike choosing, what's
+// heard is kept word for word, so everything is confirmed before it's saved.
+//
+//   title → confirm-title → text → confirm-text → (save)
+//
+// composeStep(state, alternatives) returns { state, say, outcome } where
+// outcome is 'continue', 'save' or 'cancel'.
+
+import { normalize } from './matcher.js';
+
+const CONFIRM = {
+    keep: ['keep it', 'keep', 'keep that', 'yes', 'yeah', 'yep', 'correct', 'thats right', 'thats it', 'sounds good',
+        'good', 'ok', 'okay', 'save', 'save it'],
+    again: ['try again', 'again', 'no', 'nope', 'redo', 'redo it', 'change it', 'wrong', 'thats wrong', 'start over'],
+    cancel: ['cancel', 'cancel that', 'cancel it', 'never mind', 'nevermind', 'forget it', 'stop'],
+};
+
+// While dictating the text. Only as the whole utterance, so "the deed is done" stays text.
+const TEXT_COMMANDS = {
+    done: ['done', 'im done', 'i am done', 'finished', 'im finished', 'thats all', 'thats it'],
+    undo: ['undo', 'undo that', 'scratch that', 'delete that', 'remove that'],
+    cancel: CONFIRM.cancel,
+};
+
+const CONFIRM_ASK = 'Say keep it, try again, or cancel.';
+const TEXT_ASK = "Say it a sentence or two at a time, and say done when you're finished.";
+
+// Phrases to bias the recognizer toward, where there are any to expect.
+export function composeHints(state) {
+    if (state.stage === 'confirm-title' || state.stage === 'confirm-text') return ['keep it', 'try again', 'cancel'];
+    if (state.stage === 'text') return ['done', 'scratch that', 'cancel'];
+    return ['cancel'];
+}
+
+function commandIn(alternatives, table) {
+    for (const said of alternatives) {
+        const words = normalize(said).replace(/^(please |um |uh |ok |okay )+(?=\S)/, '').replace(/ please$/, '');
+        for (const [name, phrases] of Object.entries(table)) {
+            if (phrases.includes(words) || phrases.includes(normalize(said))) return name;
+        }
+    }
+    return null;
+}
+
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const squeeze = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+
+// Recognizers mostly give lowercase with no punctuation.
+export const tidyTitle = (heard) => capitalize(squeeze(heard).replace(/[.。]+$/, ''));
+
+export function tidyChunk(heard) {
+    const s = capitalize(squeeze(heard));
+    return !s || /[.!?…"”’')]$/.test(s) ? s : `${s}.`;
+}
+
+export const composedText = (state) => state.chunks.join(' ');
+
+export const startCompose = () => ({ stage: 'title', title: '', chunks: [] });
+
+// What to say on arriving at (or coming back to) a stage.
+export function composePrompt(state) {
+    switch (state.stage) {
+        case 'title':
+            return "A new page here. What's its title?";
+        case 'confirm-title':
+            return `The title is: ${state.title}. ${CONFIRM_ASK}`;
+        case 'text':
+            return state.chunks.length
+                ? `So far: ${composedText(state)} Go on, or say done.`
+                : `Now the text. ${TEXT_ASK}`;
+        default:
+            return `Here's the page. ${state.title}. ${composedText(state)} ${CONFIRM_ASK}`;
+    }
+}
+
+// A short line for the screen.
+export function composeStatus(state) {
+    switch (state.stage) {
+        case 'title': return 'New node: say its title.';
+        case 'confirm-title': return `Title: “${state.title}”. Keep it, try again, or cancel?`;
+        case 'text': return 'New node: say the text, then “done”.';
+        default: return 'Keep it, try again, or cancel?';
+    }
+}
+
+const cancelled = (state) => ({ state, say: 'Okay, nothing added.', outcome: 'cancel' });
+const on = (state, say) => ({ state, say: say ?? composePrompt(state), outcome: 'continue' });
+
+export function composeStep(state, alternatives) {
+    const guesses = (Array.isArray(alternatives) ? alternatives : [alternatives]).map(squeeze).filter(Boolean);
+    const heard = guesses[0];
+
+    if (state.stage === 'title') {
+        if (!heard) return on(state, "I didn't hear a title. What's the title?");
+        if (commandIn(guesses, { cancel: CONFIRM.cancel })) return cancelled(state);
+        return on({ ...state, stage: 'confirm-title', title: tidyTitle(heard) });
+    }
+
+    if (state.stage === 'text') {
+        if (!heard) return on(state, state.chunks.length ? "I didn't hear anything. Go on, or say done." : `I didn't hear anything. ${TEXT_ASK}`);
+        const command = commandIn(guesses, TEXT_COMMANDS);
+        if (command === 'cancel') return cancelled(state);
+        if (command === 'undo') {
+            if (state.chunks.length === 0) return on(state, "There's nothing to remove yet.");
+            return on({ ...state, chunks: state.chunks.slice(0, -1) }, 'Removed the last part. Go on, or say done.');
+        }
+        if (command === 'done') {
+            if (state.chunks.length === 0) return on(state, "There's no text yet. Say some, or say cancel.");
+            return on({ ...state, stage: 'confirm-text' });
+        }
+        return on({ ...state, chunks: [...state.chunks, tidyChunk(heard)] }, 'Got it. Go on, or say done.');
+    }
+
+    // The two read-backs.
+    const answer = commandIn(guesses, CONFIRM);
+    if (answer === 'cancel') return cancelled(state);
+    if (state.stage === 'confirm-title') {
+        if (answer === 'keep') return on({ ...state, stage: 'text' });
+        if (answer === 'again') return on({ ...state, stage: 'title', title: '' }, "Okay. What's the title?");
+        return on(state, heard ? `Sorry, I didn't catch that. ${composePrompt(state)}` : CONFIRM_ASK);
+    }
+    if (answer === 'keep') return { state, say: 'Added.', outcome: 'save' };
+    if (answer === 'again') return on({ ...state, stage: 'text', chunks: [] }, `Okay, the text again. ${TEXT_ASK}`);
+    return on(state, heard ? `Sorry, I didn't catch that. ${CONFIRM_ASK}` : CONFIRM_ASK);
+}

@@ -36,7 +36,15 @@ Three modes, sharing your place in the story:
 **Adding a node**: under the choices in Read and Voice there's a small "Add new
 node" link, and in Voice you can say "add new node" (it's never read out as a
 choice). Give it a title and some text and it becomes a new choice after the
-page you're on. Anyone can add for now. It's saved with the story in this
+page you're on. Anyone can add for now.
+
+The link opens a form to type into. Saying it starts a spoken version instead:
+it asks for the title and reads it back, then takes the text a sentence or two
+at a time until you say "done", and reads the whole page back. At each
+read-back say "keep it", "try again" or "cancel"; while giving the text,
+"scratch that" drops the last part. Afterwards you're still on the same page,
+with the new choice read out among the others.
+ It's saved with the story in this
 browser only; loading the sample story again discards it.
 
 Voice works in Chrome and Safari (Firefox can't listen). Better voices help a

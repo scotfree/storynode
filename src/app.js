@@ -10,6 +10,7 @@ import { createSpeaker, listenOnce, support, rankVoices } from './speech.js';
 import { pageScript, choicesScript, HELP_SCRIPT, retryScript, ADD_LABEL } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
 import { createSweep } from './arc.js';
+import { startCompose, composeStep, composePrompt, composeStatus, composeHints, composedText } from './compose.js';
 
 const SAMPLE_URL = 'stories/lighthouse.json';
 const STORY_KEY = 'storynode_story';   // a story opened from a file
@@ -210,6 +211,7 @@ function renderRead() {
 const voice = {
     state: 'idle', run: 0, listening: null, retries: 0, started: false, pressedAt: 0,
     handsFree: false, stage: 'page', resume: null,
+    compose: null,     // { parent, state } while a new node is being dictated
 };
 const voiceLog = createLog();
 
@@ -288,7 +290,7 @@ async function say(text, run, from = 0) {
 // After speaking: hands-free opens the mic, Hold To Talk waits for a press.
 function awaitAnswer(run) {
     if (handsFree()) listen(run);
-    else setVoiceState('idle', 'Hold the button to answer.');
+    else setVoiceState('idle', voice.compose ? `${composeStatus(voice.compose.state)} Hold the button to answer.` : 'Hold the button to answer.');
 }
 
 // Reads the page and the choices, then waits for an answer. `from` picks up
@@ -297,6 +299,7 @@ async function voiceLoop(run, { skipPage = false, from = null } = {}) {
     voice.started = true;
     voice.retries = 0;
     voice.resume = null;
+    voice.compose = null;      // back in the story
     const stage = from?.stage ?? (skipPage ? 'choices' : 'page');
     if (stage === 'page') {
         voice.stage = 'page';
@@ -329,18 +332,20 @@ function describeOutcome(result, list) {
     return 'no match';
 }
 
-async function listen(run, { hold = false } = {}) {
+// Opens the mic once and returns the recognizer's guesses, best first ([] if
+// nothing was heard). Returns null if this run was interrupted or the mic
+// failed; the status already says why.
+async function hear(run, { hold, phrases, label }) {
     if (!can.listen) {
         setVoiceState('idle', "This browser can't listen. Tap a choice below, or try Chrome or Safari.");
-        return;
+        return null;
     }
-    const list = choices();
     setVoiceState('opening', 'Getting the microphone…');
-    addLog('listen', `${hold ? 'hold' : 'hands-free'}, choices: ${list.map((c, i) => `${i + 1}. ${c.title}`).join('; ') || 'none'}`);
+    addLog('listen', `${hold ? 'hold' : 'hands-free'}, ${label}`);
     $('voice-heard').textContent = '';
 
     const session = listenOnce({
-        phrases: hintPhrases(list),
+        phrases,
         hold,
         hints: can.hints,
         onEvent: (name, detail) => {
@@ -358,7 +363,7 @@ async function listen(run, { hold = false } = {}) {
     const { alternatives, segments, error, hintsRejected } = await session.promise;
     if (voice.listening === session) voice.listening = null;
     if (hintsRejected) can.hints = false;
-    if (run !== voice.run) return;
+    if (run !== voice.run) return null;
 
     if (segments.length > 1) addLog('guesses', `segments: ${segments.map(s => `[${s.join(' | ')}]`).join(' ')}`);
     addLog('guesses', alternatives.length ? alternatives.join(' | ') : `nothing heard (${error})`);
@@ -366,8 +371,20 @@ async function listen(run, { hold = false } = {}) {
     if (LISTEN_ERRORS[error]) {
         addLog('error', error);
         setVoiceState('idle', LISTEN_ERRORS[error]);
-        return;
+        return null;
     }
+    return alternatives;
+}
+
+async function listen(run, { hold = false } = {}) {
+    if (voice.compose) return composeListen(run, { hold });
+    const list = choices();
+    const alternatives = await hear(run, {
+        hold,
+        phrases: hintPhrases(list),
+        label: `choices: ${list.map((c, i) => `${i + 1}. ${c.title}`).join('; ') || 'none'}`,
+    });
+    if (!alternatives) return;
 
     const result = match(alternatives, list);
     matchLines(result).forEach(line => addLog('match', line));
@@ -416,7 +433,7 @@ async function command(name, run) {
             restart();
             return voiceLoop(run);
         case 'add':
-            return openAddDialog();
+            return startComposing(run);
         case 'help':
             if (!(await say(HELP_SCRIPT, run))) return;
             return awaitAnswer(run);
@@ -465,6 +482,11 @@ function onTalkTap() {
     }
     stopVoice();
     const run = voice.run;
+    if (voice.compose) {
+        voice.retries = 0;
+        composeSay(composePrompt(voice.compose.state), run);
+        return;
+    }
     const from = voice.resume?.id === currentId ? voice.resume : null;
     voice.resume = null;
     if (from) voiceLoop(run, { from });
@@ -696,10 +718,24 @@ function setUpVoiceSettings() {
 //
 // Anyone can add a page after the one they're on: a title, some text, and it
 // becomes a new choice there. It's saved with the story in this browser.
+// Typed into a form (the link under the choices), or dictated in voice mode
+// ("add new node"), where every part is read back before it's kept.
+
+function saveNode({ parent, title, text }) {
+    const { data, id, errors } = addNode(storyData, { parent, title, text });
+    const problems = errors.length ? errors : loadStory(data).errors;
+    if (problems.length) return { id: null, errors: problems };
+    storyData = data;
+    story = loadStory(data).story;
+    writeJson(STORY_KEY, data);
+    render();
+    return { id, errors: [] };
+}
 
 function openAddDialog() {
     if (!story) return;
     stopVoice();
+    voice.compose = null;
     setVoiceState('idle', voice.started ? '' : startHint());
     $('add-form').reset();
     $('add-parent').textContent = node().title;
@@ -710,25 +746,67 @@ function openAddDialog() {
 
 function submitAdd(e) {
     e.preventDefault();
-    const { data, id, errors } = addNode(storyData, {
-        parent: currentId,
-        title: $('add-title').value,
-        text: $('add-text').value,
-    });
-    const problems = errors.length ? errors : loadStory(data).errors;
-    if (problems.length) {
-        $('add-errors').textContent = problems.join('\n');
+    const { id, errors } = saveNode({ parent: currentId, title: $('add-title').value, text: $('add-text').value });
+    if (errors.length) {
+        $('add-errors').textContent = errors.join('\n');
         $('add-errors').hidden = false;
         return;
     }
-    storyData = data;
-    story = loadStory(data).story;
-    writeJson(STORY_KEY, data);
     $('add-dialog').close();
     goTo(id);
     window.scrollTo(0, 0);
     // The submit is a tap, so voice mode can read the new page straight away.
     if (mode() === 'voice' && voice.started) voiceLoop(voice.run);
+}
+
+// By voice. `voice.compose` outlives a run, so a press or STOP in the middle
+// carries on at the same question; going anywhere else in the story drops it.
+
+function startComposing(run) {
+    voice.compose = { parent: currentId, state: startCompose() };
+    voice.retries = 0;
+    addLog('compose', `new node after ${currentId}`);
+    return composeSay(composePrompt(voice.compose.state), run);
+}
+
+async function composeSay(text, run) {
+    setVoiceState('reading', composeStatus(voice.compose.state));
+    if (!(await say(text, run))) return;
+    awaitAnswer(run);
+}
+
+async function composeListen(run, { hold = false } = {}) {
+    const composing = voice.compose;
+    const alternatives = await hear(run, {
+        hold,
+        phrases: composeHints(composing.state),
+        label: `new node: ${composing.state.stage}`,
+    });
+    if (!alternatives || voice.compose !== composing) return;
+
+    const { state, say: line, outcome } = composeStep(composing.state, alternatives);
+    addLog('result', `new node: ${composing.state.stage} → ${outcome === 'continue' ? state.stage : outcome}`);
+    $('voice-heard').textContent = alternatives[0] ? `“${alternatives[0]}”` : 'Nothing heard';
+
+    if (outcome !== 'continue') {
+        let closing = line;
+        if (outcome === 'save') {
+            const { errors } = saveNode({ parent: composing.parent, title: state.title, text: composedText(state) });
+            if (errors.length) closing = `Sorry, that couldn't be added. ${errors[0]}`;
+        }
+        voice.compose = null;
+        if (!(await say(closing, run))) return;
+        return voiceLoop(run, { skipPage: true });
+    }
+
+    // Hands-free stops asking after a few silences; START picks it up again.
+    voice.retries = alternatives.length ? 0 : voice.retries + 1;
+    if (handsFree() && voice.retries > MAX_RETRIES) {
+        setVoiceState('idle', 'Tap START to carry on with the new node.');
+        return;
+    }
+    composing.state = state;
+    return composeSay(line, run);
 }
 
 function setUpAddDialog() {
@@ -800,6 +878,7 @@ async function boot() {
     window.addEventListener('hashchange', () => {
         if (mode() !== 'voice') {
             stopVoice();
+            voice.compose = null;
             setVoiceState('idle');
         }
         render();

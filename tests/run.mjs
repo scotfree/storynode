@@ -8,6 +8,7 @@ import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from 
 import { pageScript, choicesScript, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
 import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
+import { startCompose, composeStep, composePrompt, composeHints, composedText, tidyTitle, tidyChunk } from '../src/compose.js';
 
 let passed = 0;
 let failed = 0;
@@ -566,6 +567,92 @@ test('adding is never read out with the choices, only in help', () => {
         assert.doesNotMatch(choicesScript(list), /add|new node/i);
     }
     assert.match(HELP_SCRIPT, /add new node/);
+});
+
+section('dictating a node');
+
+// Feeds utterances through the conversation; returns the last step.
+function dictate(...utterances) {
+    let step = { state: startCompose(), outcome: 'continue' };
+    for (const said of utterances) step = composeStep(step.state, [].concat(said));
+    return step;
+}
+
+test('title, read back, text in parts, read back, save', () => {
+    assert.match(composePrompt(startCompose()), /title/i);
+    let step = dictate('wait for the tide');
+    assert.equal(step.state.stage, 'confirm-title');
+    assert.match(step.say, /The title is: Wait for the tide\. Say keep it, try again, or cancel\./);
+    step = dictate('wait for the tide', 'keep it', 'you sit and wait', 'The tide turns.');
+    assert.equal(step.state.stage, 'text');
+    assert.equal(step.say, 'Got it. Go on, or say done.');
+    step = composeStep(step.state, ['done']);
+    assert.equal(step.state.stage, 'confirm-text');
+    assert.match(step.say, /Wait for the tide\. You sit and wait\. The tide turns\. Say keep it/);
+    step = composeStep(step.state, ['Yes.']);
+    assert.equal(step.outcome, 'save');
+    assert.equal(step.state.title, 'Wait for the tide');
+    assert.equal(composedText(step.state), 'You sit and wait. The tide turns.');
+});
+
+test('tidies what the recognizer gives: capitals and full stops', () => {
+    assert.equal(tidyTitle('  the old  well. '), 'The old well');
+    assert.equal(tidyChunk('it is dark'), 'It is dark.');
+    assert.equal(tidyChunk('Who goes there?'), 'Who goes there?');
+});
+
+test('"try again" redoes the title, or the whole text', () => {
+    let step = dictate('weight for the tied', 'try again');
+    assert.equal(step.state.stage, 'title');
+    assert.equal(step.state.title, '');
+    step = dictate('a', 'yes', 'wrong words', 'done', 'no');
+    assert.equal(step.state.stage, 'text');
+    assert.deepEqual(step.state.chunks, []);
+});
+
+test('"scratch that" removes the last part only', () => {
+    const step = dictate('a', 'keep', 'one', 'too', 'scratch that', 'two');
+    assert.equal(composedText(step.state), 'One. Two.');
+    assert.match(dictate('a', 'keep', 'undo').say, /nothing to remove/);
+});
+
+test('cancel works at every step and saves nothing', () => {
+    assert.equal(dictate('cancel').outcome, 'cancel');
+    assert.equal(dictate('a', 'never mind').outcome, 'cancel');
+    assert.equal(dictate('a', 'keep', 'some text', 'cancel').outcome, 'cancel');
+    assert.equal(dictate('a', 'keep', 'some text', 'done', 'cancel please').outcome, 'cancel');
+});
+
+test('commands count only as the whole utterance, in any guess', () => {
+    const step = dictate('a', 'keep', 'the deed is done', 'no I will not cancel');
+    assert.equal(step.outcome, 'continue');
+    assert.equal(composedText(step.state), 'The deed is done. No I will not cancel.');
+    assert.equal(dictate('a', 'keep', 'x', [['dun', 'done']][0]).state.stage, 'confirm-text');
+});
+
+test('"done" with no text, silence and unclear answers ask again', () => {
+    assert.match(dictate('a', 'keep', 'done').say, /no text yet/);
+    assert.equal(dictate('a', 'keep', 'done').state.stage, 'text');
+    assert.match(composeStep(startCompose(), []).say, /didn't hear a title/);
+    const unclear = dictate('a', 'purple');
+    assert.equal(unclear.state.stage, 'confirm-title');
+    assert.match(unclear.say, /didn't catch that.*The title is: A\./);
+    assert.equal(dictate('a', 'keep', 'x', 'done', 'purple').outcome, 'continue');
+});
+
+test('coming back mid-text recaps what there is', () => {
+    const { state } = dictate('a', 'keep', 'one');
+    assert.match(composePrompt(state), /So far: One\. Go on, or say done\./);
+    assert.ok(composeHints(state).includes('done'));
+    assert.ok(composeHints(dictate('a').state).includes('keep it'));
+});
+
+test('a dictated node saves like a typed one', () => {
+    const { state } = dictate('wait for the tide', 'keep it', 'you sit and wait', 'done', 'keep it');
+    const { data, id, errors } = addNode(tiny, { parent: 'a', title: state.title, text: composedText(state) });
+    assert.deepEqual(errors, []);
+    assert.equal(id, 'wait-for-the-tide');
+    assert.equal(data.nodes.at(-1).text, 'You sit and wait.');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
