@@ -3,17 +3,20 @@
 //   #read  — a page of text, with the choices as buttons
 //   #voice — a big button: it reads the page and the choices, then listens
 
-import { loadStory, choicesOf, isEnding, addNode } from './story.js';
+import { loadStory, choicesOf, isEnding, addNode, idFor } from './story.js';
 import { layoutGraph } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices } from './speech.js';
 import { pageScript, choicesScript, HELP_SCRIPT, retryScript, ADD_LABEL } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
 import { createSweep } from './arc.js';
+import { createStory, listStories, overviewOf, NEW_STORY_LABEL } from './library.js';
 import { startCompose, composeStep, composePrompt, composeStatus, composeHints, composedText } from './compose.js';
 
-const SAMPLE_URL = 'stories/lighthouse.json';
-const STORY_KEY = 'storynode_story';   // a story opened from a file
+const STORIES_URL = 'stories/';         // index.json there names the built-in stories
+const LIBRARY_KEY = 'storynode_library';   // { stories: { id: data }, current: id }
+const OLD_STORY_KEY = 'storynode_story';   // from before there were several
+const NEW_STORY = '+new';              // the dropdown's last option
 const VOICE_KEY = 'storynode_voice';   // { name, rate, auto }
 const MAX_RETRIES = 2;
 const HOLD_MIN_MS = 250;       // a shorter press is a tap, not an answer
@@ -37,6 +40,9 @@ const can = support();
 
 let story = null;
 let storyData = null;          // the story as JSON, so nodes can be added and saved
+let storyId = null;
+let builtIn = [];              // [{ id, data }] from stories/
+let local = {};                // id -> data: stories made, opened or added to here
 let currentId = null;
 let history = [];              // ids before the current one, for Back
 const visited = new Set();
@@ -93,7 +99,57 @@ function restart() {
     goTo(story.start, { remember: false });
 }
 
+// --- the library: several stories, one open at a time ---
+
+const stories = () => listStories(builtIn, local);
+
+function saveLibrary() {
+    writeJson(LIBRARY_KEY, { stories: local, current: storyId });
+}
+
+function openStory(id) {
+    const entry = stories().find(s => s.id === id);
+    if (!entry) return [`There's no story "${id}".`];
+    const errors = useStory(entry.data);
+    if (errors.length) return errors;
+    storyId = id;
+    saveLibrary();
+    renderPicker();
+    return [];
+}
+
+function renderPicker() {
+    const options = stories().map(s => new Option(s.title, s.id, false, s.id === storyId));
+    $('story-select').replaceChildren(...options, el('hr'), new Option(`＋ ${NEW_STORY_LABEL}…`, NEW_STORY));
+    $('story-select').value = storyId ?? '';
+}
+
+// Picking a story from the dropdown is a tap, so voice mode can start reading it.
+function pickStory(id) {
+    stopVoice();
+    voice.compose = null;
+    const errors = openStory(id);
+    if (errors.length) {
+        renderPicker();
+        return errors;
+    }
+    window.scrollTo(0, 0);
+    if (mode() === 'voice' && voice.started) voiceLoop(voice.run);
+    else setVoiceState('idle', voice.started ? '' : startHint());
+    return [];
+}
+
+// A new story from a title and an overview; opens it.
+function addStory({ title, text }) {
+    const { id, data, errors } = createStory({ title, text }, stories().map(s => s.id));
+    if (errors.length) return errors;
+    local[id] = data;
+    return openStory(id);
+}
+
 const node = () => story.byId.get(currentId);
+// A story with only its first page: nothing to choose yet, but not an ending.
+const isBlank = () => story.byId.size === 1;
 const choices = () => choicesOf(story, currentId);
 
 // --- modes ---
@@ -191,6 +247,7 @@ function renderRead() {
         return li;
     }));
     $('read-end').hidden = list.length > 0;
+    $('read-end').textContent = isBlank() ? 'No more pages yet. Add the first one below.' : 'The end.';
     $('read-back').disabled = history.length === 0;
 }
 
@@ -309,7 +366,7 @@ async function voiceLoop(run, { skipPage = false, from = null } = {}) {
     if (stage === 'page' || stage === 'choices') {
         voice.stage = 'choices';
         setVoiceState('reading', 'Your choices…');
-        if (!(await say(choicesScript(choices()), run, stage === 'choices' ? (from?.sentence ?? 0) : 0))) return;
+        if (!(await say(choicesScript(choices(), { blank: isBlank() }), run, stage === 'choices' ? (from?.sentence ?? 0) : 0))) return;
     }
     voice.stage = 'answer';
     awaitAnswer(run);
@@ -433,7 +490,9 @@ async function command(name, run) {
             restart();
             return voiceLoop(run);
         case 'add':
-            return startComposing(run);
+            return startComposing(run, 'node');
+        case 'story':
+            return startComposing(run, 'story');
         case 'help':
             if (!(await say(HELP_SCRIPT, run))) return;
             return awaitAnswer(run);
@@ -714,12 +773,14 @@ function setUpVoiceSettings() {
     ].join(' ');
 }
 
-// --- adding a node ---
+// --- adding a node or a story ---
 //
 // Anyone can add a page after the one they're on: a title, some text, and it
-// becomes a new choice there. It's saved with the story in this browser.
-// Typed into a form (the link under the choices), or dictated in voice mode
-// ("add new node"), where every part is read back before it's kept.
+// becomes a new choice there. A new story is made the same way; its title
+// and overview become its first page. Both are saved in this browser.
+// Typed into a form (the link under the choices, the dropdown's last option),
+// or dictated in voice mode ("add new node", "add new story"), where every
+// part is read back before it's kept.
 
 function saveNode({ parent, title, text }) {
     const { data, id, errors } = addNode(storyData, { parent, title, text });
@@ -727,18 +788,28 @@ function saveNode({ parent, title, text }) {
     if (problems.length) return { id: null, errors: problems };
     storyData = data;
     story = loadStory(data).story;
-    writeJson(STORY_KEY, data);
+    local[storyId] = data;
+    saveLibrary();
     render();
     return { id, errors: [] };
 }
 
-function openAddDialog() {
-    if (!story) return;
+let adding = 'node';    // what the form is for: 'node' or 'story'
+
+function openAddDialog(kind = 'node') {
+    if (!story && kind === 'node') return;
     stopVoice();
     voice.compose = null;
     setVoiceState('idle', voice.started ? '' : startHint());
+    adding = kind;
     $('add-form').reset();
-    $('add-parent').textContent = node().title;
+    $('add-heading').textContent = kind === 'story' ? NEW_STORY_LABEL : ADD_LABEL;
+    $('add-text-label').textContent = kind === 'story' ? 'Overview' : 'Text';
+    if (kind === 'story') {
+        $('add-hint').textContent = 'A title and a short overview, like the back of a book jacket. They become the story’s first page.';
+    } else {
+        $('add-hint').replaceChildren('A new choice after ', el('strong', {}, node().title), '.');
+    }
     $('add-errors').hidden = true;
     $('add-dialog').showModal();
     $('add-title').focus();
@@ -746,14 +817,18 @@ function openAddDialog() {
 
 function submitAdd(e) {
     e.preventDefault();
-    const { id, errors } = saveNode({ parent: currentId, title: $('add-title').value, text: $('add-text').value });
+    const fields = { title: $('add-title').value, text: $('add-text').value };
+    let errors;
+    let id = null;
+    if (adding === 'story') errors = addStory(fields);
+    else ({ id, errors } = saveNode({ parent: currentId, ...fields }));
     if (errors.length) {
         $('add-errors').textContent = errors.join('\n');
         $('add-errors').hidden = false;
         return;
     }
     $('add-dialog').close();
-    goTo(id);
+    if (id) goTo(id);
     window.scrollTo(0, 0);
     // The submit is a tap, so voice mode can read the new page straight away.
     if (mode() === 'voice' && voice.started) voiceLoop(voice.run);
@@ -762,10 +837,10 @@ function submitAdd(e) {
 // By voice. `voice.compose` outlives a run, so a press or STOP in the middle
 // carries on at the same question; going anywhere else in the story drops it.
 
-function startComposing(run) {
-    voice.compose = { parent: currentId, state: startCompose() };
+function startComposing(run, kind) {
+    voice.compose = { parent: currentId, state: startCompose(kind) };
     voice.retries = 0;
-    addLog('compose', `new node after ${currentId}`);
+    addLog('compose', kind === 'story' ? 'new story' : `new node after ${currentId}`);
     return composeSay(composePrompt(voice.compose.state), run);
 }
 
@@ -780,18 +855,21 @@ async function composeListen(run, { hold = false } = {}) {
     const alternatives = await hear(run, {
         hold,
         phrases: composeHints(composing.state),
-        label: `new node: ${composing.state.stage}`,
+        label: `new ${composing.state.kind}: ${composing.state.stage}`,
     });
     if (!alternatives || voice.compose !== composing) return;
 
     const { state, say: line, outcome } = composeStep(composing.state, alternatives);
-    addLog('result', `new node: ${composing.state.stage} → ${outcome === 'continue' ? state.stage : outcome}`);
+    addLog('result', `new ${composing.state.kind}: ${composing.state.stage} → ${outcome === 'continue' ? state.stage : outcome}`);
     $('voice-heard').textContent = alternatives[0] ? `“${alternatives[0]}”` : 'Nothing heard';
 
     if (outcome !== 'continue') {
         let closing = line;
         if (outcome === 'save') {
-            const { errors } = saveNode({ parent: composing.parent, title: state.title, text: composedText(state) });
+            const fields = { title: state.title, text: composedText(state) };
+            const errors = state.kind === 'story'
+                ? addStory(fields)
+                : saveNode({ parent: composing.parent, ...fields }).errors;
             if (errors.length) closing = `Sorry, that couldn't be added. ${errors[0]}`;
         }
         voice.compose = null;
@@ -802,7 +880,7 @@ async function composeListen(run, { hold = false } = {}) {
     // Hands-free stops asking after a few silences; START picks it up again.
     voice.retries = alternatives.length ? 0 : voice.retries + 1;
     if (handsFree() && voice.retries > MAX_RETRIES) {
-        setVoiceState('idle', 'Tap START to carry on with the new node.');
+        setVoiceState('idle', `Tap START to carry on with the new ${composing.state.kind}.`);
         return;
     }
     composing.state = state;
@@ -810,16 +888,30 @@ async function composeListen(run, { hold = false } = {}) {
 }
 
 function setUpAddDialog() {
-    $('add-heading').textContent = ADD_LABEL;
     for (const id of ['read-add', 'voice-add']) {
         $(id).textContent = ADD_LABEL;
-        $(id).addEventListener('click', openAddDialog);
+        $(id).addEventListener('click', () => openAddDialog('node'));
     }
     $('add-cancel').addEventListener('click', () => $('add-dialog').close());
     $('add-form').addEventListener('submit', submitAdd);
+    $('story-select').addEventListener('change', (e) => {
+        const picked = e.target.value;
+        if (picked !== NEW_STORY) {
+            pickStory(picked);
+            return;
+        }
+        e.target.value = storyId ?? '';    // stays on the open story unless one is made
+        openAddDialog('story');
+    });
 }
 
-// --- story dialog ---
+// --- story dialog: about the open story, files in and out ---
+
+const SOURCE_NOTES = {
+    builtin: 'Comes with StoryNode.',
+    edited: 'Comes with StoryNode, with pages added in this browser.',
+    local: 'Kept in this browser only. Download it to keep a copy.',
+};
 
 function setUpStoryDialog() {
     const dialog = $('story-dialog');
@@ -827,9 +919,20 @@ function setUpStoryDialog() {
         $('story-errors').textContent = errors.join('\n');
         $('story-errors').hidden = errors.length === 0;
     };
-    $('story-button').addEventListener('click', () => {
+    const current = () => stories().find(s => s.id === storyId);
+    const fill = () => {
+        const entry = current();
         $('dialog-title').textContent = story?.title ?? 'Story';
+        $('story-overview').textContent = overviewOf(storyData);
+        $('story-source').textContent = SOURCE_NOTES[entry?.source] ?? '';
+        const remove = $('story-remove');
+        remove.hidden = !entry || entry.source === 'builtin';
+        remove.textContent = entry?.source === 'edited' ? 'Remove my additions' : 'Delete this story';
+        $('story-download').disabled = !storyData;
         showErrors([]);
+    };
+    $('story-button').addEventListener('click', () => {
+        fill();
         dialog.showModal();
     });
     $('story-close').addEventListener('click', () => dialog.close());
@@ -844,24 +947,63 @@ function setUpStoryDialog() {
             showErrors([`That isn't valid JSON: ${error.message}`]);
             return;
         }
-        const errors = useStory(data);
+        const { errors } = loadStory(data);
         if (errors.length) {
             showErrors(errors);
             return;
         }
-        writeJson(STORY_KEY, data);
+        const id = idFor(data.title || file.name.replace(/\.json$/i, ''), stories().map(s => s.id));
+        local[id] = data;
+        pickStory(id);
         dialog.close();
     });
-    $('story-sample').addEventListener('click', async () => {
-        writeJson(STORY_KEY, null);
-        await loadSample();
+    $('story-download').addEventListener('click', () => {
+        const url = URL.createObjectURL(new Blob([JSON.stringify(storyData, null, 4)], { type: 'application/json' }));
+        const link = el('a', { href: url, download: `${storyId}.json` });
+        link.click();
+        URL.revokeObjectURL(url);
+    });
+    $('story-remove').addEventListener('click', () => {
+        const entry = current();
+        if (!entry || entry.source === 'builtin') return;
+        const ask = entry.source === 'edited'
+            ? `Remove the pages added to “${entry.title}” in this browser?`
+            : `Delete “${entry.title}”? It's only kept in this browser.`;
+        if (!confirm(ask)) return;
+        delete local[entry.id];
+        const next = entry.source === 'edited' ? entry.id : stories()[0]?.id;
+        if (next) pickStory(next);
+        else saveLibrary();
         dialog.close();
     });
 }
 
-async function loadSample() {
-    const response = await fetch(SAMPLE_URL);
-    return useStory(await response.json());
+// The stories that come with the app. A file that fails to load or check is
+// skipped, so one bad story doesn't hide the rest.
+async function loadBuiltIn() {
+    const ids = await (await fetch(`${STORIES_URL}index.json`)).json();
+    const loaded = await Promise.all(ids.map(async (id) => {
+        try {
+            const data = await (await fetch(`${STORIES_URL}${id}.json`)).json();
+            return loadStory(data).errors.length ? null : { id, data };
+        } catch {
+            return null;
+        }
+    }));
+    return loaded.filter(Boolean);
+}
+
+// What this browser has kept. A story saved before there were several was
+// either the sample with pages added or a file someone opened.
+function loadLocal() {
+    const saved = readJson(LIBRARY_KEY);
+    const kept = saved?.stories && typeof saved.stories === 'object' ? saved.stories : {};
+    const old = readJson(OLD_STORY_KEY);
+    if (old && !saved) {
+        const same = builtIn.find(s => s.data.title === old.title);
+        kept[same?.id ?? idFor(old.title, builtIn.map(s => s.id))] = old;
+    }
+    return { kept, current: saved?.current ?? Object.keys(kept)[0] };
 }
 
 // --- boot ---
@@ -884,15 +1026,19 @@ async function boot() {
         render();
     });
 
-    const saved = readJson(STORY_KEY);
-    const errors = saved ? useStory(saved) : [];
-    if (!saved || errors.length) {
-        try {
-            await loadSample();
-        } catch (error) {
-            document.querySelector('main').prepend(el('p', { class: 'errors' }, `Couldn't load the sample story: ${error.message}. Serve this folder over http (see README).`));
-        }
+    try {
+        builtIn = await loadBuiltIn();
+    } catch (error) {
+        document.querySelector('main').prepend(el('p', { class: 'errors' }, `Couldn't load the stories: ${error.message}. Serve this folder over http (see README).`));
     }
+    const { kept, current } = loadLocal();
+    local = kept;
+    // The one you were in, else the first that opens.
+    for (const id of [current, ...stories().map(s => s.id)]) {
+        if (id && openStory(id).length === 0) break;
+    }
+    if (storyId) writeJson(OLD_STORY_KEY, null);
+    renderPicker();
     render();
 }
 

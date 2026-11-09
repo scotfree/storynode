@@ -121,6 +121,39 @@ button:disabled {
     border: 1px solid var(--line);
 }
 
+.story-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 1rem;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+
+.story-bar select {
+    flex: 1;
+    min-width: 0;
+    max-width: 24rem;
+    font: inherit;
+    font-family: var(--serif);
+    font-size: 1rem;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.35rem 0.5rem;
+}
+
+.story-overview {
+    font-family: var(--serif);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 #story-button {
     padding: 0.3rem 0.7rem;
 }
@@ -296,7 +329,7 @@ button:disabled {
 /* --- Voice: made for a phone --- */
 
 .voice {
-    min-height: calc(100dvh - 3.5rem);
+    min-height: calc(100dvh - 6.5rem);
     display: flex;
     flex-direction: column;
     align-items: center;

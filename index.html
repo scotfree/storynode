@@ -17,6 +17,12 @@
         <button id="story-button" class="ghost" title="Story" aria-label="Story">⋯</button>
     </header>
 
+    <!-- Which story: pick one, or make a new one. -->
+    <div class="story-bar">
+        <label for="story-select">Story</label>
+        <select id="story-select"></select>
+    </div>
+
     <main>
         <!-- Map: the whole story's shape, titles only. -->
         <section id="map-view" class="view" hidden>
@@ -31,7 +37,7 @@
                 <h1 id="read-title"></h1>
                 <div id="read-text" class="story-text"></div>
                 <ol id="read-choices" class="choices"></ol>
-                <p id="read-end" class="the-end" hidden>The end.</p>
+                <p id="read-end" class="the-end" hidden></p>
                 <button id="read-add" class="add-link" type="button"></button>
                 <div class="row">
                     <button id="read-back" class="ghost">Back</button>
@@ -69,11 +75,14 @@
 
     <dialog id="story-dialog">
         <h2 id="dialog-title">Story</h2>
+        <p id="story-overview" class="story-overview"></p>
+        <p id="story-source" class="hint"></p>
+        <label class="file">Add a story from a file <input type="file" id="story-file" accept="application/json,.json"></label>
         <p class="hint">Stories are JSON: nodes with an id, a title, text and a parent. See README.md.</p>
-        <label class="file">Open a story file <input type="file" id="story-file" accept="application/json,.json"></label>
         <p id="story-errors" class="errors" hidden></p>
         <div class="row">
-            <button id="story-sample" class="ghost">Load the sample story</button>
+            <button id="story-download" class="ghost">Download this story</button>
+            <button id="story-remove" class="ghost" hidden></button>
             <button id="story-close">Close</button>
         </div>
     </dialog>
@@ -81,9 +90,9 @@
     <dialog id="add-dialog">
         <form id="add-form" method="dialog" class="add-form">
             <h2 id="add-heading"></h2>
-            <p class="hint">A new choice after <strong id="add-parent"></strong>.</p>
+            <p id="add-hint" class="hint"></p>
             <label>Title <input id="add-title" type="text" maxlength="80" required autocomplete="off"></label>
-            <label>Text <textarea id="add-text" rows="7" required></textarea></label>
+            <label><span id="add-text-label">Text</span> <textarea id="add-text" rows="7" required></textarea></label>
             <p id="add-errors" class="errors" hidden></p>
             <div class="row">
                 <button id="add-cancel" class="ghost" type="button">Cancel</button>

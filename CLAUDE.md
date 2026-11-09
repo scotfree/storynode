@@ -27,14 +27,15 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   because Chrome cuts long ones off) and `SpeechRecognition` (`listenOnce`: fresh
   non-continuous sessions, re-armed while a press is held, merged into up to 5 guesses,
   phrase hints when supported, timeouts for sessions that never end).
-- `src/compose.js`: the spoken conversation for dictating a new node (title → read back →
+- `src/library.js`: the list of stories (built-in plus this browser's) and `createStory`.
+- `src/compose.js`: the spoken conversation for dictating a new node or story (title → read back →
   text in parts until "done" → read back → save), as a pure step function.
 - `src/voicelog.js`: entries and wording for the voice log popup.
 - `src/arc.js`: tracks a drag around the big button as a signed sweep, for the arc
   controls (Repeat, Restart, mode dial).
 - `src/layout.js`: map layout (rows by longest path, ordered by parents' positions).
 - `src/script.js`: everything voice mode says.
-- `stories/lighthouse.json`: the sample story.
+- `stories/index.json`: names of the built-in stories; `stories/lighthouse.json` is the sample.
 
 ## Decisions
 
@@ -53,4 +54,9 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   read back and confirmed, and its commands (done, scratch that, cancel) only count as
   the whole utterance. Text comes in several short utterances, since there's no
   `continuous` mode.
+- Several stories: built-ins are fetched from `stories/` via `index.json` (a static page
+  can't list a folder); anything made, opened or added to in the browser lives in
+  localStorage under `storynode_library`, keyed by story id, and a built-in's id there
+  overrides the file. A new story is made exactly like a node (same form, same dictation):
+  its title and overview become its first page, so there's no separate cover screen.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

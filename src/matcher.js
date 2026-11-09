@@ -16,6 +16,8 @@ export const COMMANDS = {
     // Recognizers often hear "note" for "node".
     add: ['add new node', 'add a new node', 'add node', 'new node', 'add new note', 'add a new note', 'add note',
         'new note', 'add new page', 'add a new page', 'add a node', 'add a note'],
+    story: ['add new story', 'add a new story', 'add story', 'new story', 'create new story', 'create a new story',
+        'create a story', 'start a new story', 'write a new story'],
     stop: ['stop', 'pause', 'quiet', 'be quiet', 'stop listening', 'goodbye'],
 };
 

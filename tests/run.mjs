@@ -8,6 +8,7 @@ import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from 
 import { pageScript, choicesScript, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
 import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
+import { createStory, listStories, overviewOf } from '../src/library.js';
 import { startCompose, composeStep, composePrompt, composeHints, composedText, tidyTitle, tidyChunk } from '../src/compose.js';
 
 let passed = 0;
@@ -653,6 +654,75 @@ test('a dictated node saves like a typed one', () => {
     assert.deepEqual(errors, []);
     assert.equal(id, 'wait-for-the-tide');
     assert.equal(data.nodes.at(-1).text, 'You sit and wait.');
+});
+
+section('several stories');
+
+test('a new story is a title and an overview, which become its first page', () => {
+    const { id, data, errors } = createStory({ title: ' The Old Well ', text: ' Something is down there. ' }, ['lighthouse']);
+    assert.deepEqual(errors, []);
+    assert.equal(id, 'the-old-well');
+    assert.equal(data.title, 'The Old Well');
+    assert.equal(overviewOf(data), 'Something is down there.');
+    const { story, errors: loadErrors } = loadStory(data);
+    assert.deepEqual(loadErrors, []);
+    assert.equal(story.byId.get(story.start).title, 'The Old Well');
+    // And it grows like any other story.
+    const grown = addNode(data, { parent: data.start, title: 'Look down', text: 'Dark.' });
+    assert.deepEqual(loadStory(grown.data).errors, []);
+});
+
+test('a new story needs both, and gets its own id', () => {
+    assert.equal(createStory({ title: '', text: 'x' }).errors.length, 1);
+    assert.equal(createStory({ title: 'x', text: ' ' }).errors.length, 1);
+    assert.equal(createStory({ title: 'Lighthouse', text: 'x' }, ['lighthouse']).id, 'lighthouse-2');
+});
+
+test('lists built-in stories first, with your changes, then your own by title', () => {
+    const made = (title) => createStory({ title, text: 'x' }).data;
+    const list = listStories([{ id: 'tiny', data: tiny }, { id: 'other', data: made('Other') }],
+        { zebra: made('Zebra'), tiny: { ...tiny, title: 'Tiny, extended' }, apple: made('Apple') });
+    assert.deepEqual(list.map(s => [s.id, s.title, s.source]), [
+        ['tiny', 'Tiny, extended', 'edited'],
+        ['other', 'Other', 'builtin'],
+        ['apple', 'Apple', 'local'],
+        ['zebra', 'Zebra', 'local'],
+    ]);
+    assert.deepEqual(listStories([{ id: 'tiny', data: tiny }]).map(s => s.source), ['builtin']);
+});
+
+test('the overview is its own field if given, else the first page', () => {
+    assert.equal(overviewOf(tiny), 'Begin.');
+    assert.equal(overviewOf({ ...tiny, overview: 'A very small story.' }), 'A very small story.');
+    assert.equal(overviewOf({}), '');
+});
+
+test('every story named in stories/index.json loads cleanly', () => {
+    const ids = JSON.parse(readFileSync(new URL('../stories/index.json', import.meta.url), 'utf8'));
+    assert.ok(ids.length > 0);
+    for (const id of ids) {
+        const data = JSON.parse(readFileSync(new URL(`../stories/${id}.json`, import.meta.url), 'utf8'));
+        assert.deepEqual(loadStory(data).errors, [], id);
+        assert.ok(data.title, id);
+    }
+});
+
+test('"add new story" is a command and dictates like a node', () => {
+    assert.equal(commandFrom('add new story'), 'story');
+    assert.equal(commandFrom('new story please'), 'story');
+    assert.equal(commandFrom('start over'), 'restart');
+    assert.match(composePrompt(startCompose('story')), /new story/i);
+    let step = { state: startCompose('story') };
+    for (const said of ['the old well', 'keep it']) step = composeStep(step.state, [said]);
+    assert.match(step.say, /overview/);
+    for (const said of ['something is down there', 'done']) step = composeStep(step.state, [said]);
+    assert.match(step.say, /Here's the story\. The old well\. Something is down there\./);
+    assert.equal(composeStep(step.state, ['keep it']).outcome, 'save');
+});
+
+test('a story with only its first page says so instead of "The end"', () => {
+    assert.match(choicesScript([], { blank: true }), /no more pages yet/);
+    assert.match(choicesScript([]), /The end/);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

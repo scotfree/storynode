@@ -58,30 +58,39 @@ export function tidyChunk(heard) {
 
 export const composedText = (state) => state.chunks.join(' ');
 
-export const startCompose = () => ({ stage: 'title', title: '', chunks: [] });
+// kind: 'node' (a page after the current one) or 'story' (a whole new story,
+// whose title and overview become its first page).
+export const startCompose = (kind = 'node') => ({ kind, stage: 'title', title: '', chunks: [] });
+
+const isStory = (state) => state.kind === 'story';
+const textAsk = (state) => (isStory(state)
+    ? `Now the overview, like the back of a book jacket. ${TEXT_ASK}`
+    : `Now the text. ${TEXT_ASK}`);
 
 // What to say on arriving at (or coming back to) a stage.
 export function composePrompt(state) {
     switch (state.stage) {
         case 'title':
-            return "A new page here. What's its title?";
+            return isStory(state) ? "A new story. What's its title?" : "A new page here. What's its title?";
         case 'confirm-title':
             return `The title is: ${state.title}. ${CONFIRM_ASK}`;
         case 'text':
             return state.chunks.length
                 ? `So far: ${composedText(state)} Go on, or say done.`
-                : `Now the text. ${TEXT_ASK}`;
+                : textAsk(state);
         default:
-            return `Here's the page. ${state.title}. ${composedText(state)} ${CONFIRM_ASK}`;
+            return `Here's the ${isStory(state) ? 'story' : 'page'}. ${state.title}. ${composedText(state)} ${CONFIRM_ASK}`;
     }
 }
+
+const label = (state) => (isStory(state) ? 'New story' : 'New node');
 
 // A short line for the screen.
 export function composeStatus(state) {
     switch (state.stage) {
-        case 'title': return 'New node: say its title.';
+        case 'title': return `${label(state)}: say its title.`;
         case 'confirm-title': return `Title: “${state.title}”. Keep it, try again, or cancel?`;
-        case 'text': return 'New node: say the text, then “done”.';
+        case 'text': return `${label(state)}: say the ${isStory(state) ? 'overview' : 'text'}, then “done”.`;
         default: return 'Keep it, try again, or cancel?';
     }
 }

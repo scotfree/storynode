@@ -20,6 +20,14 @@ Open http://127.0.0.1:8000. The microphone needs a secure page: `127.0.0.1`
 and `localhost` count, but a phone on your network needs HTTPS (e.g. GitHub
 Pages).
 
+**Stories**: the dropdown under the top bar lists the stories and switches
+between them. Its last entry, "New story…", makes one the same way you add a
+node: a title and a short overview (the jacket cover), which become the story's
+first page. In Voice you can say "add new story" and dictate both. The ⋯ menu
+shows the open story's overview, adds a story from a JSON file, downloads the
+open story as JSON, and deletes a story of yours or removes what you added to a
+built-in one.
+
 Three modes, sharing your place in the story:
 
 - **Map**: the whole story's shape, titles only. Click a page to read from there.
@@ -45,7 +53,7 @@ read-back say "keep it", "try again" or "cancel"; while giving the text,
 "scratch that" drops the last part. Afterwards you're still on the same page,
 with the new choice read out among the others.
  It's saved with the story in this
-browser only; loading the sample story again discards it.
+browser only.
 
 Voice works in Chrome and Safari (Firefox can't listen). Better voices help a
 lot: on a Mac or iPhone, download an "Enhanced" or "Premium" voice in the
@@ -83,7 +91,13 @@ modules with unit tests. The browser speech APIs are thin wrappers in
 - A page with no children is an ending.
 - Stories must only go forward (no loops).
 
-Open your own story from the ⋯ menu. The sample is `stories/lighthouse.json`.
+- `overview`: optional jacket-cover text; without it, the first page's text is used.
+
+Built-in stories are the files in `stories/` named in `stories/index.json`
+(`["lighthouse"]` is `stories/lighthouse.json`). To ship a story made in the
+browser, download it from the ⋯ menu, put it in `stories/` and add its name to
+the index. Stories made or added to in the browser are kept in that browser's
+local storage.
 
 ## How choosing by voice works
 

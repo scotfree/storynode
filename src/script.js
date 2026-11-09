@@ -9,8 +9,13 @@ export function pageScript(node) {
 }
 
 // "Choice one: Walk down to the beach. Choice two: … Which will it be?"
-export function choicesScript(choices) {
-    if (choices.length === 0) return 'The end. Say start over to begin again.';
+// `blank`: a new story with only its first page, which isn't an ending.
+export function choicesScript(choices, { blank = false } = {}) {
+    if (choices.length === 0) {
+        return blank
+            ? 'This story has no more pages yet. Say add new node to write the next one.'
+            : 'The end. Say start over to begin again.';
+    }
     if (choices.length === 1) return `There's one way on. Choice one: ${choices[0].title}. Say choice one, or its name.`;
     const list = choices.map((c, i) => `Choice ${numberWord(i + 1)}: ${c.title}.`).join('\n');
     return `${list}\nWhich will it be?`;
@@ -18,7 +23,8 @@ export function choicesScript(choices) {
 
 export const HELP_SCRIPT = 'Say a choice by its number, like choice one, or by its name. '
     + 'You can also say repeat, choices, go back, or start over. '
-    + 'To add a new page that follows this one, say add new node, and I\'ll ask for its title and text.';
+    + 'To add a new page that follows this one, say add new node, and I\'ll ask for its title and text. '
+    + 'To begin a whole new story, say add new story.';
 
 export function retryScript(attempt, { hold = false } = {}) {
     if (hold) {
