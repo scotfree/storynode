@@ -7,6 +7,7 @@ import { layoutGraph } from '../src/layout.js';
 import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from '../src/speech.js';
 import { pageScript, choicesScript, numberWord, retryScript } from '../src/script.js';
 import { createLog, matchLines } from '../src/voicelog.js';
+import { angleAt, createSweep } from '../src/arc.js';
 
 let passed = 0;
 let failed = 0;
@@ -241,6 +242,90 @@ test('speak only cancels when something is playing', () => {
     synth.speaking = true;
     speaker.speak('Hello again.');
     assert.equal(cancels, 1);
+});
+
+test('speak tracks its sentence and can resume from it', () => {
+    globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+    const queued = [];
+    const synth = { speaking: false, pending: false, cancel() {}, speak(u) { queued.push(u); } };
+    const speaker = createSpeaker({ synth });
+    speaker.speak('One. Two. Three.');
+    queued[0].onstart();
+    queued[0].onend();
+    queued[1].onstart();
+    assert.equal(speaker.position(), 1);
+    speaker.cancel();
+    queued[1].onend();              // a cancelled sentence doesn't count as finished
+    assert.equal(speaker.position(), 1);
+
+    queued.length = 0;
+    speaker.speak('One. Two. Three.', { from: speaker.position() });
+    assert.deepEqual(queued.map(u => u.text), ['Two.', 'Three.']);
+    queued[1].onstart();
+    assert.equal(speaker.position(), 2);
+});
+
+// --- arc controls ---
+section('arc');
+
+// A point on a circle around (0, 0), degrees clockwise from the top.
+const on = (degrees, radius = 100) => {
+    const a = degrees * Math.PI / 180;
+    return [radius * Math.sin(a), -radius * Math.cos(a)];
+};
+
+function sweepFrom(start, options = {}) {
+    const [startX, startY] = on(start);
+    return createSweep({ cx: 0, cy: 0, startX, startY, ...options });
+}
+
+// Moves through angles in order and returns every update.
+const drag = (tracker, angles) => angles.map(a => tracker.update(...on(a)));
+
+test('angles run clockwise from the top', () => {
+    assert.equal(Math.round(angleAt(0, -10, 0, 0)), 0);
+    assert.equal(Math.round(angleAt(10, 0, 0, 0)), 90);
+    assert.equal(Math.round(angleAt(-10, 0, 0, 0)), -90);
+});
+
+test('a clockwise drag fires once, at 180 degrees', () => {
+    const steps = drag(sweepFrom(225, { direction: 1 }), [260, 300, 340, 380, 404, 406, 440]);
+    assert.deepEqual(steps.map(s => s.fired), [false, false, false, false, false, true, false]);
+    assert.equal(Math.round(steps[steps.length - 1].sweep), 180);
+});
+
+test('a counterclockwise drag sweeps negative', () => {
+    const steps = drag(sweepFrom(135, { direction: -1 }), [100, 60, 20, -20, -46]);
+    assert.equal(Math.round(steps[4].sweep), -180);
+    assert.equal(steps[4].fired, true);
+});
+
+test('crossing the +/-180 seam is a small step', () => {
+    const [step] = drag(sweepFrom(170, { direction: 1 }), [-170]);
+    assert.equal(Math.round(step.sweep), 20);
+});
+
+test('dragging the wrong way does not build up', () => {
+    const tracker = sweepFrom(225, { direction: 1 });
+    drag(tracker, [200, 170, 140]);
+    assert.equal(tracker.update(...on(140)).sweep, 0);
+    assert.equal(Math.round(tracker.update(...on(170)).sweep), 30);
+});
+
+test('moves in the center deadzone are ignored', () => {
+    const tracker = sweepFrom(0, { direction: 0 });
+    assert.equal(Math.round(tracker.update(...on(30)).sweep), 30);
+    assert.equal(Math.round(tracker.update(...on(150, 5)).sweep), 30);
+});
+
+test('a jump straight across adds nothing', () => {
+    const tracker = sweepFrom(0, { direction: 0 });
+    assert.equal(tracker.update(...on(170)).sweep, 0);
+});
+
+test('with no set direction, either way fires', () => {
+    assert.equal(drag(sweepFrom(0), [60, 120, 181]).at(-1).fired, true);
+    assert.equal(drag(sweepFrom(0), [-60, -120, -181]).at(-1).fired, true);
 });
 
 // --- the matcher's trace and the log ---

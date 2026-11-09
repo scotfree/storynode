@@ -47,6 +47,7 @@ export function createSpeaker({ synth = globalThis.speechSynthesis } = {}) {
     let rate = 1;
     let token = 0;
     let cancelledAt = 0;
+    let position = 0;
 
     const isBusy = () => Boolean(synth?.speaking || synth?.pending);
     const cancelNow = () => {
@@ -68,12 +69,17 @@ export function createSpeaker({ synth = globalThis.speechSynthesis } = {}) {
             synth?.speak(new SpeechSynthesisUtterance(' '));
         },
 
+        // The sentence being spoken, or the next one if between sentences.
+        // speak(text, { from: position() }) picks up from there.
+        position: () => position,
+
         // Resolves true when done, false if cancelled. The first speak() must
         // come from a tap unless unlock() already did.
-        speak(text) {
+        speak(text, { from = 0 } = {}) {
             const mine = ++token;
             cancelNow();
-            const parts = sentences(text);
+            position = from;
+            const parts = sentences(text).slice(from);
             if (parts.length === 0) return Promise.resolve(true);
             return new Promise((resolve) => {
                 const queue = () => {
@@ -88,10 +94,17 @@ export function createSpeaker({ synth = globalThis.speechSynthesis } = {}) {
                             u.lang = voice.lang;
                         }
                         u.rate = rate;
-                        if (i === parts.length - 1) {
-                            u.onend = () => resolve(mine === token);
-                            u.onerror = () => resolve(false);
-                        }
+                        const isLast = i === parts.length - 1;
+                        // `token` changes on cancel, so a cancelled sentence
+                        // doesn't count as finished.
+                        u.onstart = () => {
+                            if (mine === token) position = from + i;
+                        };
+                        u.onend = () => {
+                            if (mine === token) position = from + i + 1;
+                            if (isLast) resolve(mine === token);
+                        };
+                        if (isLast) u.onerror = () => resolve(false);
                         synth.speak(u);
                     });
                 };

@@ -9,6 +9,7 @@
     --accent: #9c4a1a;
     --accent-ink: #fffaf0;
     --listen: #2f6f4f;
+    --glow: #e8913f;
     --node: #fffaf0;
     --node-current: #f3d9b8;
     --node-visited: #efe6d6;
@@ -26,6 +27,7 @@
         --accent: #e0915a;
         --accent-ink: #1b1916;
         --listen: #6fc59a;
+        --glow: #ffb66e;
         --node: #24211d;
         --node-current: #5a3a22;
         --node-visited: #2e2a24;
@@ -265,9 +267,129 @@ button:disabled {
     min-height: 1.7em;
 }
 
+/* Registered so the arc buttons can animate back along their circle. */
+@property --a {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+}
+
+.talk-stage {
+    --talk: min(56vw, 300px);
+    --small: clamp(40px, 13vw, 56px);
+    --orbit: calc(var(--talk) / 2 + 6px + var(--small) / 2);
+    --knob: 30px;
+    position: relative;
+    flex: none;
+    width: calc(2 * var(--orbit) + var(--small));
+    height: calc(2 * var(--orbit) + var(--small));
+}
+
+/* Each sits at the stage's center, then rides out along its angle --a. */
+.arc-button,
+.mode-knob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    padding: 0;
+    border-radius: 50%;
+    z-index: 2;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    transition: --a 0.25s ease;
+    transform: translate(-50%, -50%) rotate(var(--a)) translateY(calc(-1 * var(--r))) rotate(calc(-1 * var(--a)));
+}
+
+.arc-button.dragging,
+.mode-knob.dragging {
+    transition: none;
+}
+
+.arc-button {
+    --r: var(--orbit);
+    width: var(--small);
+    height: var(--small);
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--accent);
+    font-size: clamp(0.58rem, 2.5vw, 0.75rem);
+    font-weight: 700;
+}
+
+.arc-button.dragging {
+    box-shadow: 0 0 14px 3px var(--glow);
+}
+
+#restart-arc {
+    --a: 225deg;
+}
+
+#repeat-arc {
+    --a: 135deg;
+}
+
+.mode-knob {
+    --r: calc(var(--talk) / 2 - var(--knob) / 2 - 8px);
+    width: var(--knob);
+    height: var(--knob);
+    background: var(--glow);
+    border: 2px solid var(--accent-ink);
+    box-shadow: 0 0 12px 4px var(--glow);
+}
+
+.voice-mode {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(50% + var(--talk) / 2 + 3px);
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    pointer-events: none;
+}
+
+.arc-guide {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.arc-guide .arc-track,
+.arc-guide .arc-fill {
+    fill: none;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 5px var(--glow));
+}
+
+.arc-guide .arc-track {
+    stroke: var(--glow);
+    stroke-width: 3;
+    opacity: 0.55;
+}
+
+.arc-guide .arc-fill {
+    stroke: var(--glow);
+    stroke-width: 6;
+}
+
+.arc-guide .arc-head {
+    fill: var(--glow);
+}
+
 .talk {
-    width: min(70vw, 300px);
-    height: min(70vw, 300px);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: var(--talk);
+    height: var(--talk);
     border-radius: 50%;
     font-size: 1.6rem;
     font-weight: 700;
@@ -282,7 +404,16 @@ button:disabled {
 }
 
 .talk:active {
-    transform: scale(0.97);
+    transform: translate(-50%, -50%) scale(0.97);
+}
+
+.talk-sub {
+    display: block;
+    font-size: 0.95rem;
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: 0;
+    margin-top: 0.25rem;
 }
 
 .talk.listening {

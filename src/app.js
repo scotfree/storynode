@@ -9,12 +9,14 @@ import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices } from './speech.js';
 import { pageScript, choicesScript, HELP_SCRIPT, retryScript } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
+import { createSweep } from './arc.js';
 
 const SAMPLE_URL = 'stories/lighthouse.json';
 const STORY_KEY = 'storynode_story';   // a story opened from a file
 const VOICE_KEY = 'storynode_voice';   // { name, rate, auto }
 const MAX_RETRIES = 2;
 const HOLD_MIN_MS = 250;       // a shorter press is a tap, not an answer
+const ARC_DEGREES = 180;       // how far the arc controls must be dragged
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}, text) => {
@@ -197,12 +199,19 @@ function renderRead() {
 //
 // Two ways to answer. Hold To Talk: listens while the button is held and
 // submits on release. Hands-free: the mic opens after reading and a pause
-// ends it. The first press in either mode is a tap that starts the reading.
+// ends it, and a tap stops everything. The first press in either mode is a
+// tap that starts the reading.
+//
+// `stage` and the speaker's position say where we are ('page', 'choices' or
+// 'answer'), so Stop can be undone by picking up at the same sentence.
 
-const voice = { state: 'idle', run: 0, listening: null, retries: 0, started: false, pressedAt: 0 };
+const voice = {
+    state: 'idle', run: 0, listening: null, retries: 0, started: false, pressedAt: 0,
+    handsFree: false, stage: 'page', resume: null,
+};
 const voiceLog = createLog();
 
-const handsFree = () => $('voice-auto').checked;
+const handsFree = () => voice.handsFree;
 
 function addLog(kind, text) {
     voiceLog.add(kind, text);
@@ -221,15 +230,26 @@ function setVoiceState(state, status = '') {
     talk.classList.toggle('listening', state === 'listening');
     talk.classList.toggle('reading', state === 'reading');
     talk.classList.toggle('busy', state === 'opening' || state === 'checking');
-    talk.textContent = state === 'listening' ? 'Listening…'
-        : state === 'checking' ? 'Checking…'
-            : handsFree() ? 'Tap to Start' : 'Hold To Talk';
+    const [label, sub] = talkLabel(state);
+    talk.textContent = label;
+    if (sub) talk.append(el('span', { class: 'talk-sub' }, sub));
     $('voice-status').textContent = status;
+    $('repeat-arc').disabled = !voice.started;
+    $('restart-arc').disabled = !voice.started;
+}
+
+function talkLabel(state) {
+    if (state === 'listening') return handsFree() ? ['Listening…', '(tap to stop)'] : ['Listening…'];
+    if (state === 'checking') return ['Checking…'];
+    if (!handsFree()) return ['Hold To Talk'];
+    return [state === 'idle' ? 'START' : 'STOP'];
 }
 
 const startHint = () => (handsFree()
-    ? 'Tap to start, then answer out loud when it asks.'
+    ? 'Tap START, then answer out loud when it asks.'
     : 'Tap once to hear the story, then hold the button to answer.');
+
+const placeNow = () => ({ id: currentId, stage: voice.stage, sentence: speaker.position() });
 
 function renderVoice() {
     const n = node();
@@ -257,9 +277,9 @@ function stopVoice() {
     voice.listening = null;
 }
 
-async function say(text, run) {
+async function say(text, run, from = 0) {
     setVoiceState('reading', voice.state === 'reading' ? $('voice-status').textContent : '');
-    const done = await speaker.speak(text);
+    const done = await speaker.speak(text, { from });
     return done && run === voice.run;
 }
 
@@ -269,16 +289,24 @@ function awaitAnswer(run) {
     else setVoiceState('idle', 'Hold the button to answer.');
 }
 
-// Reads the page and the choices, then waits for an answer.
-async function voiceLoop(run, { skipPage = false } = {}) {
+// Reads the page and the choices, then waits for an answer. `from` picks up
+// at a saved place instead of the top.
+async function voiceLoop(run, { skipPage = false, from = null } = {}) {
     voice.started = true;
     voice.retries = 0;
-    if (!skipPage) {
+    voice.resume = null;
+    const stage = from?.stage ?? (skipPage ? 'choices' : 'page');
+    if (stage === 'page') {
+        voice.stage = 'page';
         setVoiceState('reading', 'Reading…');
-        if (!(await say(pageScript(node()), run))) return;
+        if (!(await say(pageScript(node()), run, from?.sentence ?? 0))) return;
     }
-    setVoiceState('reading', 'Your choices…');
-    if (!(await say(choicesScript(choices()), run))) return;
+    if (stage === 'page' || stage === 'choices') {
+        voice.stage = 'choices';
+        setVoiceState('reading', 'Your choices…');
+        if (!(await say(choicesScript(choices()), run, stage === 'choices' ? (from?.sentence ?? 0) : 0))) return;
+    }
+    voice.stage = 'answer';
     awaitAnswer(run);
 }
 
@@ -416,23 +444,147 @@ async function firstStart() {
     voiceLoop(run);
 }
 
-// Taps: the first start in either mode, and everything in hands-free.
-// While listening, a tap means "I'm done".
+// Taps: the first start in either mode, and START/STOP in hands-free.
 function onTalkTap() {
     if (!voice.started) {
         firstStart();
         return;
     }
     if (!handsFree()) return;
-    const state = voice.state;
-    if (state === 'checking') return;
-    if (state === 'listening' || state === 'opening') {
-        setVoiceState('checking', 'Checking…');
-        voice.listening?.stop();
+    if (voice.state !== 'idle') {
+        const place = placeNow();
+        addLog('mic', `stopped at ${place.stage}, sentence ${place.sentence + 1}`);
+        stopVoice();
+        voice.resume = place;
+        setVoiceState('idle', 'Stopped. Tap START to carry on.');
         return;
     }
     stopVoice();
-    listen(voice.run);
+    const run = voice.run;
+    const from = voice.resume?.id === currentId ? voice.resume : null;
+    voice.resume = null;
+    if (from) voiceLoop(run, { from });
+    else listen(run);
+}
+
+// The dial's position and the words above the button show the mode.
+function syncDial() {
+    $('mode-knob').style.setProperty('--a', `${dialRest()}deg`);
+    $('voice-mode').textContent = handsFree() ? 'Hands Free' : 'Hold to Talk';
+}
+
+const dialRest = () => (handsFree() ? 180 : 0);
+
+function toggleHandsFree() {
+    const place = placeNow();
+    stopVoice();
+    voice.handsFree = !voice.handsFree;
+    voice.resume = place;
+    saveVoiceSettings();
+    syncDial();
+    addLog('mic', `mode: ${handsFree() ? 'hands free' : 'hold to talk'}`);
+    setVoiceState('idle', voice.started ? '' : startHint());
+}
+
+function repeatNode() {
+    stopVoice();
+    voiceLoop(voice.run);
+}
+
+function restartStory() {
+    stopVoice();
+    restart();
+    voiceLoop(voice.run);
+}
+
+// --- arc controls ---
+//
+// Repeat, Restart and the mode dial are all confirmed by dragging them half
+// way around the big button. Degrees run clockwise from the top.
+
+function polar(degrees, radius) {
+    const a = degrees * Math.PI / 180;
+    return `${(radius * Math.sin(a)).toFixed(1)} ${(-radius * Math.cos(a)).toFixed(1)}`;
+}
+
+function arcPath(radius, from, to) {
+    if (from === to) return '';
+    const large = Math.abs(to - from) > 180 ? 1 : 0;
+    const clockwise = to > from ? 1 : 0;
+    return `M${polar(from, radius)} A${radius} ${radius} 0 ${large} ${clockwise} ${polar(to, radius)}`;
+}
+
+function showArcGuide(radius, rest, direction) {
+    const svg = $('arc-guide');
+    const size = $('talk-stage').clientWidth;
+    svg.setAttribute('viewBox', `${-size / 2} ${-size / 2} ${size} ${size}`);
+    const defs = svgEl('defs');
+    const marker = svgEl('marker', { id: 'arc-arrow', viewBox: '0 0 10 10', refX: 5, refY: 5, markerWidth: 4, markerHeight: 4, orient: 'auto' });
+    marker.append(svgEl('path', { d: 'M0 0 L10 5 L0 10 z', class: 'arc-head' }));
+    defs.append(marker);
+    // The dial can go either way, so it shows its whole circle.
+    const track = direction === 0
+        ? svgEl('circle', { class: 'arc-track', r: radius, cx: 0, cy: 0 })
+        : svgEl('path', { class: 'arc-track', d: arcPath(radius, rest, rest + direction * ARC_DEGREES), 'marker-end': 'url(#arc-arrow)' });
+    svg.replaceChildren(defs, track, svgEl('path', { id: 'arc-fill', class: 'arc-fill' }));
+    svg.removeAttribute('hidden');
+}
+
+function setUpArcControl({ element, rest, direction, fire, springBack = true }) {
+    let tracker = null;
+    let radius = 0;
+    const setAngle = (degrees) => element.style.setProperty('--a', `${degrees}deg`);
+
+    const release = ({ fired = false } = {}) => {
+        tracker = null;
+        $('arc-guide').setAttribute('hidden', '');
+        if (fired && !springBack) {
+            setAngle(rest());           // already there: no animation
+            void element.offsetWidth;   // apply it before transitions return
+            element.classList.remove('dragging');
+        } else {
+            element.classList.remove('dragging');
+            setAngle(rest());           // animates back along the circle
+        }
+    };
+
+    element.addEventListener('pointerdown', (e) => {
+        const stage = $('talk-stage').getBoundingClientRect();
+        const own = element.getBoundingClientRect();
+        const cx = stage.left + stage.width / 2;
+        const cy = stage.top + stage.height / 2;
+        radius = Math.hypot(own.left + own.width / 2 - cx, own.top + own.height / 2 - cy);
+        tracker = createSweep({ cx, cy, startX: e.clientX, startY: e.clientY, direction, target: ARC_DEGREES });
+        element.setPointerCapture(e.pointerId);
+        element.classList.add('dragging');
+        showArcGuide(radius, rest(), direction);
+    });
+    element.addEventListener('pointermove', (e) => {
+        if (!tracker) return;
+        const { sweep, fired } = tracker.update(e.clientX, e.clientY);
+        const angle = rest() + sweep;
+        setAngle(angle);
+        $('arc-fill').setAttribute('d', arcPath(radius, rest(), angle));
+        if (fired) {
+            fire();
+            release({ fired: true });
+        }
+    });
+    element.addEventListener('pointerup', () => { if (tracker) release(); });
+    element.addEventListener('pointercancel', () => { if (tracker) release(); });
+    element.addEventListener('contextmenu', (e) => e.preventDefault());
+    // No way to drag from a keyboard: Enter or space on a focused control acts at once.
+    element.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        fire();
+    });
+}
+
+function setUpArcControls() {
+    setUpArcControl({ element: $('restart-arc'), rest: () => 225, direction: 1, fire: restartStory });
+    setUpArcControl({ element: $('repeat-arc'), rest: () => 135, direction: -1, fire: repeatNode });
+    setUpArcControl({ element: $('mode-knob'), rest: dialRest, direction: 0, fire: toggleHandsFree, springBack: false });
 }
 
 const holdsApply = () => voice.started && !handsFree();
@@ -499,6 +651,10 @@ function setUpVoiceLog() {
     });
 }
 
+function saveVoiceSettings() {
+    writeJson(VOICE_KEY, { name: $('voice-select').value, rate: Number($('voice-rate').value), auto: voice.handsFree });
+}
+
 function setUpVoiceSettings() {
     const saved = readJson(VOICE_KEY) ?? {};
     const select = $('voice-select');
@@ -511,7 +667,7 @@ function setUpVoiceSettings() {
     };
     fill();
     if (globalThis.speechSynthesis) speechSynthesis.addEventListener('voiceschanged', fill);
-    const save = () => writeJson(VOICE_KEY, { name: select.value, rate: Number($('voice-rate').value), auto: $('voice-auto').checked });
+    const save = saveVoiceSettings;
     select.addEventListener('change', () => {
         speaker.setVoice(speaker.voices().find(v => v.name === select.value) ?? null);
         save();
@@ -522,12 +678,8 @@ function setUpVoiceSettings() {
         speaker.setRate(Number($('voice-rate').value));
         save();
     });
-    $('voice-auto').checked = saved.auto ?? false;
-    $('voice-auto').addEventListener('change', () => {
-        save();
-        stopVoice();
-        setVoiceState('idle', voice.started ? '' : startHint());
-    });
+    voice.handsFree = saved.auto ?? false;
+    syncDial();
 
     $('voice-support').textContent = [
         can.speak ? 'Reading aloud: yes.' : "Reading aloud: this browser can't.",
@@ -587,6 +739,7 @@ async function boot() {
     setUpVoiceSettings();
     setUpStoryDialog();
     setUpTalkButton();
+    setUpArcControls();
     setUpVoiceLog();
     $('read-back').addEventListener('click', goBack);
     $('read-restart').addEventListener('click', restart);

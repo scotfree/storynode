@@ -27,6 +27,8 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   non-continuous sessions, re-armed while a press is held, merged into up to 5 guesses,
   phrase hints when supported, timeouts for sessions that never end).
 - `src/voicelog.js`: entries and wording for the voice log popup.
+- `src/arc.js`: tracks a drag around the big button as a signed sweep, for the arc
+  controls (Repeat, Restart, mode dial).
 - `src/layout.js`: map layout (rows by longest path, ordered by parents' positions).
 - `src/script.js`: everything voice mode says.
 - `stories/lighthouse.json`: the sample story.
@@ -38,5 +40,7 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 - The mic is off while the app is speaking, so it doesn't hear itself.
 - Hold To Talk is the default; hands-free is an option because Safari, iPhone especially,
   may refuse a mic that no press started.
+- Repeat and Restart are disabled until the story has started: they fire mid-drag, which
+  Safari doesn't accept as the gesture that unlocks speech.
 - No `continuous` recognition: it's the mode iOS Safari is reported to stall in.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

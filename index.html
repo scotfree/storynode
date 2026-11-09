@@ -42,14 +42,20 @@
         <!-- Voice: one big button. It reads the page and the choices, then listens. -->
         <section id="voice-view" class="view voice" hidden>
             <p id="voice-title" class="voice-title"></p>
-            <button id="talk" class="talk" aria-live="polite">Hold To Talk</button>
+            <div id="talk-stage" class="talk-stage">
+                <button id="talk" class="talk" aria-live="polite">Hold To Talk</button>
+                <p id="voice-mode" class="voice-mode">Hold to Talk</p>
+                <button id="mode-knob" class="mode-knob" type="button" aria-label="Switch between Hold to Talk and Hands Free"></button>
+                <button id="restart-arc" class="arc-button" type="button" aria-label="Restart the story: drag clockwise">Restart</button>
+                <button id="repeat-arc" class="arc-button" type="button" aria-label="Repeat this page: drag counterclockwise">Repeat</button>
+                <svg id="arc-guide" class="arc-guide" aria-hidden="true" hidden></svg>
+            </div>
             <p id="voice-status" class="voice-status" aria-live="polite"></p>
             <ol id="voice-choices" class="voice-choices"></ol>
             <details class="voice-settings">
                 <summary>Voice settings</summary>
                 <label>Voice <select id="voice-select"></select></label>
                 <label>Speed <input type="range" id="voice-rate" min="0.7" max="1.4" step="0.05" value="1"></label>
-                <label class="check"><input type="checkbox" id="voice-auto"> Hands-free (listen after reading)</label>
                 <p id="voice-support" class="hint"></p>
             </details>
             <button id="voice-panel" class="voice-panel" type="button" aria-label="Open the voice log">

@@ -26,9 +26,12 @@ Three modes, sharing your place in the story:
 - **Read**: a page of text with the choices as buttons.
 - **Voice**: one big button, made for a phone. Tap once and it reads the page
   and the choices. Then hold the button, say your answer, and let go. Holding
-  while it reads interrupts it. Hands-free (in Voice settings) opens the mic
-  after each reading instead. The panel at the bottom shows what it hears; tap
-  it for a log of how each answer was matched.
+  while it reads interrupts it. Drag the glowing knob on the button half way
+  around to switch to Hands Free, which opens the mic after each reading; there
+  the button is START and STOP, and START picks up where you stopped. Drag
+  Restart clockwise or Repeat counterclockwise around the button to confirm
+  them. The panel at the bottom shows what it hears; tap it for a log of how
+  each answer was matched.
 
 Voice works in Chrome and Safari (Firefox can't listen). Better voices help a
 lot: on a Mac or iPhone, download an "Enhanced" or "Premium" voice in the
