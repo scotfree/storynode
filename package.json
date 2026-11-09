@@ -1,0 +1,9 @@
+{
+  "name": "storymode",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.mjs",
+    "start": "python3 -m http.server 8000"
+  }
+}

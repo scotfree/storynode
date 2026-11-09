@@ -1,0 +1,26 @@
+// What voice mode says. Pure, so the wording is easy to test and tweak.
+
+const NUMBERS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+export const numberWord = (n) => NUMBERS[n - 1] ?? String(n);
+
+// The page itself: title, then text.
+export function pageScript(node) {
+    return `${node.title}.\n${node.text}`;
+}
+
+// "Choice one: Walk down to the beach. Choice two: … Which will it be?"
+export function choicesScript(choices) {
+    if (choices.length === 0) return 'The end. Say start over to begin again.';
+    if (choices.length === 1) return `There's one way on. Choice one: ${choices[0].title}. Say choice one, or its name.`;
+    const list = choices.map((c, i) => `Choice ${numberWord(i + 1)}: ${c.title}.`).join('\n');
+    return `${list}\nWhich will it be?`;
+}
+
+export const HELP_SCRIPT = 'Say a choice by its number, like choice one, or by its name. '
+    + 'You can also say repeat, choices, go back, or start over.';
+
+export function retryScript(attempt) {
+    return attempt <= 1
+        ? "Sorry, I didn't catch that. Say a number, like choice one, or a choice's name."
+        : 'Still not sure. Tap the button when you want to try again.';
+}

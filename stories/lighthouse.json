@@ -1,0 +1,116 @@
+{
+    "title": "The Lighthouse at Gull Point",
+    "start": "start",
+    "nodes": [
+        {
+            "id": "start",
+            "title": "The Lighthouse at Gull Point",
+            "text": "The ferry leaves you on the jetty at dusk. The lighthouse above you is dark for the first time in a hundred years, and the keeper is nowhere to be found. Gulls wheel and complain overhead. A path climbs toward the tower, another winds down to the beach, and a third disappears into the pines."
+        },
+        {
+            "id": "tower",
+            "title": "Climb the lighthouse stairs",
+            "aliases": ["the lighthouse", "the stairs", "climb"],
+            "parent": ["start", "oak"],
+            "text": "The iron stairs ring under your boots, all one hundred and twelve of them. At the top, the great lamp sits cold behind its glass. On the keeper's desk lies an open logbook, its last page smudged with salt."
+        },
+        {
+            "id": "beach",
+            "title": "Walk down to the beach",
+            "aliases": ["the beach", "the shore", "the sand"],
+            "parent": "start",
+            "text": "The tide is out, and the sand is cold and hard. Something green glints at the waterline: a bottle, corked and sealed with wax. Further along the cliffs, the mouth of a sea cave breathes slow and steady."
+        },
+        {
+            "id": "forest",
+            "title": "Follow the forest path",
+            "aliases": ["the forest", "the woods", "the pines", "the path"],
+            "parent": "start",
+            "text": "Pine needles soften every step. The path forks around an enormous old oak, its lowest branch an easy reach. Through the trees you can just make out a low roof and a curl of chimney smoke."
+        },
+        {
+            "id": "lamp",
+            "title": "Light the great lamp",
+            "aliases": ["the lamp", "light it"],
+            "parent": ["tower", "tunnel"],
+            "text": "You strike a match and the wick catches. The lens turns, slow and enormous, and a beam sweeps out across the water. Far out at sea, a ship that was drifting toward the rocks swings safely away. Gull Point is lit again. The end."
+        },
+        {
+            "id": "logbook",
+            "title": "Read the keeper's logbook",
+            "aliases": ["the logbook", "the book", "read it"],
+            "parent": "tower",
+            "text": "The last entry is three days old. Gone to the hut in the woods for the spare key. Back by dark. Underneath, in shakier handwriting: If I am not back, the key is under the blue stone."
+        },
+        {
+            "id": "bottle",
+            "title": "Open the green bottle",
+            "aliases": ["the bottle", "open it"],
+            "parent": "beach",
+            "text": "Inside is a rolled-up map of the coast, drawn in a careful hand. A cross marks the sea cave, and next to it someone has written: the long way up. Out on the water, a ship's lantern blinks."
+        },
+        {
+            "id": "cave",
+            "title": "Explore the sea cave",
+            "aliases": ["the cave", "the sea cave"],
+            "parent": ["beach", "bottle"],
+            "text": "The cave smells of salt and old rope. Water drips somewhere in the dark. At the back, a narrow tunnel climbs steeply upward, and fresh air spills down it. Behind you, the tide has begun to turn."
+        },
+        {
+            "id": "ship",
+            "title": "Signal the passing ship",
+            "aliases": ["the ship", "signal", "wave"],
+            "parent": "bottle",
+            "text": "You wave the empty bottle so it flashes in the last of the light. The ship answers with three long blinks and lowers a boat. By morning you are aboard, the island shrinking behind you, its mystery left for someone else. The end."
+        },
+        {
+            "id": "tide",
+            "title": "Wait for the tide",
+            "aliases": ["wait", "the tide"],
+            "parent": "cave",
+            "text": "You sit on a dry ledge and listen to the sea come in. It fills the cave mouth, silver and loud, then slowly draws back out. When you step outside, the stars are up and the lighthouse is still dark. Tomorrow, perhaps. The end."
+        },
+        {
+            "id": "tunnel",
+            "title": "Crawl through the tunnel",
+            "aliases": ["the tunnel", "crawl"],
+            "parent": "cave",
+            "text": "The tunnel is a smuggler's stair, cut into the rock. It ends at a trapdoor that opens, impossibly, into the lamp room at the top of the lighthouse. The great lamp waits in front of you."
+        },
+        {
+            "id": "oak",
+            "title": "Climb the old oak",
+            "aliases": ["the oak", "the tree", "climb the tree"],
+            "parent": "forest",
+            "text": "From the top branches you can see the whole island: the dark tower, the beach, the hut in its clearing. Out to the west, a storm is gathering, black and fast."
+        },
+        {
+            "id": "storm",
+            "title": "Watch the storm roll in",
+            "aliases": ["watch", "the storm"],
+            "parent": "oak",
+            "text": "You stay in the tree as the wind rises. Lightning walks across the sea toward you, and the rain arrives all at once. Soaked and laughing, you climb down in the dark. Some nights are for stories, not for keys. The end."
+        },
+        {
+            "id": "hut",
+            "title": "Find the keeper's hut",
+            "aliases": ["the hut", "the cabin", "the smoke"],
+            "parent": ["forest", "logbook"],
+            "text": "The hut's door stands open. A kettle is still warm on the stove, but no one is home. Beside the step lies a flat blue stone."
+        },
+        {
+            "id": "key",
+            "title": "Lift the blue stone",
+            "aliases": ["the stone", "the blue stone", "lift it"],
+            "parent": "hut",
+            "text": "Under the stone is a brass key, and under the key a note: Thank you. Gone fishing. Light the lamp. You laugh out loud, alone in the woods, and start back toward the tower. The end."
+        },
+        {
+            "id": "note",
+            "title": "Leave a note and go",
+            "aliases": ["the note", "leave", "go home"],
+            "parent": "hut",
+            "text": "You write on the back of the ferry ticket: Came looking for you. All well? You prop it against the warm kettle and walk back to the jetty to wait for the morning boat. The end."
+        }
+    ]
+}
