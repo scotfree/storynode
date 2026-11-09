@@ -4,7 +4,7 @@ Guidance for Claude Code in this repository.
 
 ## What this is
 
-Story Mode: choose-your-own-adventure stories with three modes (Map, Read,
+StoryNode: choose-your-own-adventure stories with three modes (Map, Read,
 Voice) on one static page. Plain JavaScript ES modules, no build, no
 dependencies, no server. A recreation of an earlier project that ran on
 Amazon Alexa; the point now is cheap, in-browser voice play.

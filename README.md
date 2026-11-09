@@ -1,4 +1,4 @@
-# Story Mode
+# StoryNode
 
 Choose-your-own-adventure stories you can read, map, or **play by voice**.
 
@@ -86,17 +86,3 @@ problem rather than general dictation:
   (SoundSwallower or Vosk), or an audio model that must answer with one of the
   choices for very natural phrasing.
 - Speaking while listening ("barge-in"), so you can answer mid-sentence.
-
-## Moving to its own repo
-
-This folder started inside another repo. To split it out with its history:
-
-```bash
-git subtree split --prefix=storymode -b storymode-only
-```
-
-```bash
-git push git@github.com:OWNER/storymode.git storymode-only:main
-```
-
-`.github/workflows/test.yml` starts running once it's at the new repo's root.

@@ -1,4 +1,4 @@
-// Story Mode: one page, three modes that share your place in the story.
+// StoryNode: one page, three modes that share your place in the story.
 //   #map   — the whole story's shape (titles only); click a node to read it
 //   #read  — a page of text, with the choices as buttons
 //   #voice — a big button: it reads the page and the choices, then listens
@@ -10,8 +10,8 @@ import { createSpeaker, listenOnce, support, rankVoices } from './speech.js';
 import { pageScript, choicesScript, HELP_SCRIPT, retryScript } from './script.js';
 
 const SAMPLE_URL = 'stories/lighthouse.json';
-const STORY_KEY = 'storymode_story';   // a story opened from a file
-const VOICE_KEY = 'storymode_voice';   // { name, rate, auto }
+const STORY_KEY = 'storynode_story';   // a story opened from a file
+const VOICE_KEY = 'storynode_voice';   // { name, rate, auto }
 const MAX_RETRIES = 2;
 
 const $ = (id) => document.getElementById(id);
@@ -106,7 +106,7 @@ function render() {
         else a.removeAttribute('aria-current');
     }
     if (!story) return;
-    document.title = `${story.title} · Story Mode`;
+    document.title = `${story.title} · StoryNode`;
     if (m === 'map') renderMap();
     if (m === 'read') renderRead();
     if (m === 'voice') renderVoice();
