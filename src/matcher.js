@@ -127,29 +127,48 @@ export function titleHits(text, choices) {
 }
 
 // alternatives: the recognizer's guesses, best first. choices: [{ id, title, aliases }].
-// Returns { kind: 'choice', index, id, via } | { kind: 'command', name } | { kind: 'none' }.
+// Returns { kind: 'choice', index, id, via } | { kind: 'command', name } | { kind: 'none' },
+// each with `trace`: for every guess tried, { said, number, command, scores, outcome }.
 export function match(alternatives, choices) {
     const guesses = (Array.isArray(alternatives) ? alternatives : [alternatives]).filter(Boolean);
+    const trace = [];
     for (const said of guesses) {
+        const step = { said, number: null, command: null, scores: [], outcome: '' };
+        trace.push(step);
+
         const n = numberFrom(said);
+        step.number = n;
         if (n !== null && n >= 1 && n <= choices.length) {
-            return { kind: 'choice', index: n - 1, id: choices[n - 1].id, via: 'number', heard: said };
+            step.outcome = `number ${n}`;
+            return { kind: 'choice', index: n - 1, id: choices[n - 1].id, via: 'number', heard: said, trace };
         }
         const command = commandFrom(said);
-        if (command) return { kind: 'command', name: command, heard: said };
+        step.command = command;
+        if (command) {
+            step.outcome = `command ${command}`;
+            return { kind: 'command', name: command, heard: said, trace };
+        }
 
         // A title wins if it has a word only it has, and clearly beats the rest.
         const scores = titleHits(said, choices);
+        step.scores = scores;
         const order = scores.map((_, i) => i)
             .sort((a, b) => scores[b].distinct - scores[a].distinct || scores[b].hits - scores[a].hits);
         const [best, second] = order;
-        if (best === undefined || scores[best].distinct === 0) continue;
+        if (best === undefined || scores[best].distinct === 0) {
+            step.outcome = 'no word unique to one choice';
+            continue;
+        }
         const runnerUp = second === undefined ? { distinct: 0, hits: 0 } : scores[second];
         const clear = scores[best].distinct > runnerUp.distinct
             || (scores[best].distinct === runnerUp.distinct && scores[best].hits > runnerUp.hits);
-        if (clear) return { kind: 'choice', index: best, id: choices[best].id, via: 'title', heard: said };
+        if (clear) {
+            step.outcome = `title of choice ${best + 1}`;
+            return { kind: 'choice', index: best, id: choices[best].id, via: 'title', heard: said, trace };
+        }
+        step.outcome = 'tie between titles';
     }
-    return { kind: 'none', heard: guesses[0] ?? '' };
+    return { kind: 'none', heard: guesses[0] ?? '', trace };
 }
 
 // Phrases to bias the recognizer toward at a node: the choices, a few number

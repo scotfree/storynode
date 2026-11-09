@@ -8,11 +8,13 @@ import { layoutGraph } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices } from './speech.js';
 import { pageScript, choicesScript, HELP_SCRIPT, retryScript } from './script.js';
+import { createLog, formatEntry, matchLines } from './voicelog.js';
 
 const SAMPLE_URL = 'stories/lighthouse.json';
 const STORY_KEY = 'storynode_story';   // a story opened from a file
 const VOICE_KEY = 'storynode_voice';   // { name, rate, auto }
 const MAX_RETRIES = 2;
+const HOLD_MIN_MS = 250;       // a shorter press is a tap, not an answer
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}, text) => {
@@ -189,22 +191,45 @@ function renderRead() {
 
 // --- voice ---
 //
-// A small loop: read the page, read the choices, listen, act, repeat. `run`
-// is bumped whenever the user taps or leaves voice mode, so an older loop
-// that's still awaiting speech stops quietly instead of talking over.
+// A small loop: read the page, read the choices, wait for an answer, act,
+// repeat. `run` is bumped whenever the user interrupts or leaves voice mode,
+// so an older loop that's still awaiting speech stops quietly.
+//
+// Two ways to answer. Hold To Talk: listens while the button is held and
+// submits on release. Hands-free: the mic opens after reading and a pause
+// ends it. The first press in either mode is a tap that starts the reading.
 
-const voice = { state: 'idle', run: 0, listening: null, retries: 0, started: false };
+const voice = { state: 'idle', run: 0, listening: null, retries: 0, started: false, pressedAt: 0 };
+const voiceLog = createLog();
+
+const handsFree = () => $('voice-auto').checked;
+
+function addLog(kind, text) {
+    voiceLog.add(kind, text);
+    if ($('log-dialog').open) renderLog();
+}
+
+function renderLog() {
+    const list = $('log-list');
+    list.replaceChildren(...voiceLog.entries().map(e => el('li', { class: `log-${e.kind}` }, formatEntry(e))));
+    list.scrollTop = list.scrollHeight;
+}
 
 function setVoiceState(state, status = '') {
     voice.state = state;
     const talk = $('talk');
     talk.classList.toggle('listening', state === 'listening');
     talk.classList.toggle('reading', state === 'reading');
+    talk.classList.toggle('busy', state === 'opening' || state === 'checking');
     talk.textContent = state === 'listening' ? 'Listening…'
-        : state === 'reading' ? 'Tap to answer'
-            : voice.started ? 'Tap to talk' : 'Start';
+        : state === 'checking' ? 'Checking…'
+            : handsFree() ? 'Tap to Start' : 'Hold To Talk';
     $('voice-status').textContent = status;
 }
+
+const startHint = () => (handsFree()
+    ? 'Tap to start, then answer out loud when it asks.'
+    : 'Tap once to hear the story, then hold the button to answer.');
 
 function renderVoice() {
     const n = node();
@@ -222,7 +247,7 @@ function renderVoice() {
         li.append(b);
         return li;
     }));
-    if (voice.state === 'idle') setVoiceState('idle', voice.started ? '' : 'Tap Start, then listen. Answer out loud when it asks.');
+    if (voice.state === 'idle') setVoiceState('idle', voice.started ? '' : startHint());
 }
 
 function stopVoice() {
@@ -233,44 +258,93 @@ function stopVoice() {
 }
 
 async function say(text, run) {
-    setVoiceState('reading', voice.state === 'listening' ? '' : $('voice-status').textContent);
+    setVoiceState('reading', voice.state === 'reading' ? $('voice-status').textContent : '');
     const done = await speaker.speak(text);
     return done && run === voice.run;
 }
 
-// Reads the page and the choices, then listens.
+// After speaking: hands-free opens the mic, Hold To Talk waits for a press.
+function awaitAnswer(run) {
+    if (handsFree()) listen(run);
+    else setVoiceState('idle', 'Hold the button to answer.');
+}
+
+// Reads the page and the choices, then waits for an answer.
 async function voiceLoop(run, { skipPage = false } = {}) {
     voice.started = true;
     voice.retries = 0;
-    $('voice-heard').textContent = '';
     if (!skipPage) {
         setVoiceState('reading', 'Reading…');
         if (!(await say(pageScript(node()), run))) return;
     }
     setVoiceState('reading', 'Your choices…');
     if (!(await say(choicesScript(choices()), run))) return;
-    if ($('voice-auto').checked) listen(run);
-    else setVoiceState('idle', 'Tap to answer.');
+    awaitAnswer(run);
 }
 
-async function listen(run) {
+const LISTEN_ERRORS = {
+    'not-allowed': 'The microphone is blocked. Allow it for this page, then try again.',
+    'service-not-allowed': 'Speech recognition is off. On a Mac or iPhone, check Siri and Dictation settings.',
+    'audio-capture': "Couldn't find a microphone.",
+    network: "Couldn't reach the speech service. Check your connection.",
+    'mic-timeout': "The microphone didn't open. Allow it if asked, then try again.",
+    'language-not-supported': "This browser can't recognize English here.",
+    'start-failed': "Couldn't start listening. Try again.",
+    InvalidStateError: "Couldn't start listening. Try again.",
+};
+
+function describeOutcome(result, list) {
+    if (result.kind === 'choice') return list[result.index].title;
+    if (result.kind === 'command') return `command: ${result.name}`;
+    return 'no match';
+}
+
+async function listen(run, { hold = false } = {}) {
     if (!can.listen) {
         setVoiceState('idle', "This browser can't listen. Tap a choice below, or try Chrome or Safari.");
         return;
     }
     const list = choices();
-    setVoiceState('listening', 'Listening…');
-    voice.listening = listenOnce({ phrases: hintPhrases(list) });
-    const { alternatives, error } = await voice.listening.promise;
-    voice.listening = null;
+    setVoiceState('opening', 'Getting the microphone…');
+    addLog('listen', `${hold ? 'hold' : 'hands-free'}, choices: ${list.map((c, i) => `${i + 1}. ${c.title}`).join('; ') || 'none'}`);
+    $('voice-heard').textContent = '';
+
+    const session = listenOnce({
+        phrases: hintPhrases(list),
+        hold,
+        hints: can.hints,
+        onEvent: (name, detail) => {
+            addLog(name === 'error' ? 'error' : 'mic', detail ? `${name}: ${detail}` : name);
+            if (name === 'mic-open' && run === voice.run && voice.state === 'opening') {
+                setVoiceState('listening', hold ? 'Listening. Let go when you’re done.' : 'Listening…');
+            }
+        },
+        onInterim: (text) => {
+            addLog('interim', text);
+            if (run === voice.run) $('voice-heard').textContent = text;
+        },
+    });
+    voice.listening = session;
+    const { alternatives, segments, error, hintsRejected } = await session.promise;
+    if (voice.listening === session) voice.listening = null;
+    if (hintsRejected) can.hints = false;
     if (run !== voice.run) return;
 
-    if (error === 'not-allowed' || error === 'service-not-allowed') {
-        setVoiceState('idle', 'The microphone is blocked. Allow it for this page, then tap.');
+    if (segments.length > 1) addLog('guesses', `segments: ${segments.map(s => `[${s.join(' | ')}]`).join(' ')}`);
+    addLog('guesses', alternatives.length ? alternatives.join(' | ') : `nothing heard (${error})`);
+
+    if (LISTEN_ERRORS[error]) {
+        addLog('error', error);
+        setVoiceState('idle', LISTEN_ERRORS[error]);
         return;
     }
-    $('voice-heard').textContent = alternatives[0] ? `Heard: “${alternatives[0]}”` : '';
+
     const result = match(alternatives, list);
+    matchLines(result).forEach(line => addLog('match', line));
+    addLog('result', describeOutcome(result, list));
+    $('voice-heard').textContent = alternatives[0]
+        ? `“${alternatives[0]}” → ${describeOutcome(result, list)}`
+        : 'Nothing heard';
 
     if (result.kind === 'choice') {
         const picked = $('voice-choices').children[result.index]?.querySelector('button');
@@ -283,14 +357,16 @@ async function listen(run) {
         await command(result.name, run);
         return;
     }
-    // Didn't catch it.
+    // Didn't catch it. Hands-free gives up after a few tries; with a button
+    // there's always a next press, so it always says something.
     voice.retries++;
-    if (voice.retries > MAX_RETRIES) {
+    if (handsFree() && voice.retries > MAX_RETRIES) {
         setVoiceState('idle', 'Tap to try again.');
         return;
     }
-    if (!(await say(retryScript(voice.retries), run))) return;
-    if (voice.retries < MAX_RETRIES) listen(run);
+    if (!(await say(retryScript(Math.min(voice.retries, MAX_RETRIES), { hold: !handsFree() }), run))) return;
+    if (!handsFree()) setVoiceState('idle', 'Hold the button to answer.');
+    else if (voice.retries < MAX_RETRIES) listen(run);
     else setVoiceState('idle', 'Tap to try again.');
 }
 
@@ -303,7 +379,7 @@ async function command(name, run) {
         case 'back':
             if (!goBack()) {
                 if (!(await say("You're at the beginning.", run))) return;
-                return listen(run);
+                return awaitAnswer(run);
             }
             return voiceLoop(run);
         case 'restart':
@@ -311,29 +387,116 @@ async function command(name, run) {
             return voiceLoop(run);
         case 'help':
             if (!(await say(HELP_SCRIPT, run))) return;
-            return listen(run);
+            return awaitAnswer(run);
         case 'stop':
         default:
             stopVoice();
-            setVoiceState('idle', 'Paused. Tap to carry on.');
+            setVoiceState('idle', handsFree() ? 'Paused. Tap to carry on.' : 'Paused. Hold the button to answer.');
     }
 }
 
-// The one button. Idle: start (or carry on). Reading: skip to answering.
-// Listening: stop listening.
-function onTalk() {
-    const state = voice.state;
+// First start: unlock speech inside the tap, ask for the mic so the prompt
+// doesn't land on the first hold, then read.
+async function firstStart() {
+    voice.started = true;
     stopVoice();
     const run = voice.run;
-    if (state === 'listening') {
-        setVoiceState('idle', 'Tap to talk.');
-    } else if (state === 'reading') {
-        listen(run);
-    } else if (!voice.started) {
-        voiceLoop(run);
-    } else {
-        listen(run);
+    speaker.unlock();
+    if (can.listen && navigator.mediaDevices?.getUserMedia) {
+        setVoiceState('reading', 'Allow the microphone to answer by voice.');
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(t => t.stop());
+            addLog('mic', 'permission granted');
+        } catch (error) {
+            addLog('error', `permission: ${error.name}`);
+        }
+        if (run !== voice.run) return;
     }
+    voiceLoop(run);
+}
+
+// Taps: the first start in either mode, and everything in hands-free.
+// While listening, a tap means "I'm done".
+function onTalkTap() {
+    if (!voice.started) {
+        firstStart();
+        return;
+    }
+    if (!handsFree()) return;
+    const state = voice.state;
+    if (state === 'checking') return;
+    if (state === 'listening' || state === 'opening') {
+        setVoiceState('checking', 'Checking…');
+        voice.listening?.stop();
+        return;
+    }
+    stopVoice();
+    listen(voice.run);
+}
+
+const holdsApply = () => voice.started && !handsFree();
+
+// Press: stop any reading and listen until release.
+function onTalkDown() {
+    if (!holdsApply()) return;
+    voice.pressedAt = performance.now();
+    stopVoice();
+    listen(voice.run, { hold: true });
+}
+
+// Release: submit what was heard. A very short press was a mistaken tap.
+function onTalkUp() {
+    if (!holdsApply() || !voice.listening) return;
+    if (performance.now() - voice.pressedAt < HOLD_MIN_MS) {
+        stopVoice();
+        setVoiceState('idle', 'Hold the button while you talk.');
+        return;
+    }
+    setVoiceState('checking', 'Checking…');
+    voice.listening.stop();
+}
+
+function onTalkCancel() {
+    if (!holdsApply() || !voice.listening) return;
+    addLog('mic', 'press cancelled by the system');
+    stopVoice();
+    setVoiceState('idle', 'That press was interrupted. Hold the button to answer.');
+}
+
+function setUpTalkButton() {
+    const talk = $('talk');
+    talk.addEventListener('click', onTalkTap);
+    talk.addEventListener('pointerdown', (e) => {
+        talk.setPointerCapture(e.pointerId);    // sliding off the button keeps listening
+        onTalkDown();
+    });
+    talk.addEventListener('pointerup', onTalkUp);
+    talk.addEventListener('pointercancel', onTalkCancel);
+    talk.addEventListener('contextmenu', (e) => e.preventDefault());
+    // The space bar holds too. Enter still clicks.
+    talk.addEventListener('keydown', (e) => { if (e.code === 'Space' && !e.repeat) onTalkDown(); });
+    talk.addEventListener('keyup', (e) => { if (e.code === 'Space') onTalkUp(); });
+}
+
+function setUpVoiceLog() {
+    const dialog = $('log-dialog');
+    $('voice-panel').addEventListener('click', () => {
+        renderLog();
+        dialog.showModal();
+        renderLog();    // scroll to the end now it has a height
+    });
+    $('log-close').addEventListener('click', () => dialog.close());
+    $('log-copy').addEventListener('click', async () => {
+        const button = $('log-copy');
+        try {
+            await navigator.clipboard.writeText(voiceLog.entries().map(formatEntry).join('\n'));
+            button.textContent = 'Copied';
+        } catch {
+            button.textContent = "Couldn't copy";
+        }
+        setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+    });
 }
 
 function setUpVoiceSettings() {
@@ -359,8 +522,12 @@ function setUpVoiceSettings() {
         speaker.setRate(Number($('voice-rate').value));
         save();
     });
-    $('voice-auto').checked = saved.auto ?? true;
-    $('voice-auto').addEventListener('change', save);
+    $('voice-auto').checked = saved.auto ?? false;
+    $('voice-auto').addEventListener('change', () => {
+        save();
+        stopVoice();
+        setVoiceState('idle', voice.started ? '' : startHint());
+    });
 
     $('voice-support').textContent = [
         can.speak ? 'Reading aloud: yes.' : "Reading aloud: this browser can't.",
@@ -419,7 +586,8 @@ async function loadSample() {
 async function boot() {
     setUpVoiceSettings();
     setUpStoryDialog();
-    $('talk').addEventListener('click', onTalk);
+    setUpTalkButton();
+    setUpVoiceLog();
     $('read-back').addEventListener('click', goBack);
     $('read-restart').addEventListener('click', restart);
     window.addEventListener('hashchange', () => {

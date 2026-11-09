@@ -22,9 +22,11 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   command. Picks a title only when it clearly wins on words no other choice has;
   otherwise returns `none` so the app asks again. Sound-alikes ("choice to" → 2) only
   right after choice/option/number, as the last word.
-- `src/speech.js`: thin wrappers over `speechSynthesis` (one sentence per utterance,
-  because Chrome cuts long ones off) and `SpeechRecognition` (one utterance, up to 5
-  guesses, phrase hints when supported).
+- `src/speech.js`: wrappers over `speechSynthesis` (one sentence per utterance,
+  because Chrome cuts long ones off) and `SpeechRecognition` (`listenOnce`: fresh
+  non-continuous sessions, re-armed while a press is held, merged into up to 5 guesses,
+  phrase hints when supported, timeouts for sessions that never end).
+- `src/voicelog.js`: entries and wording for the voice log popup.
 - `src/layout.js`: map layout (rows by longest path, ordered by parents' positions).
 - `src/script.js`: everything voice mode says.
 - `stories/lighthouse.json`: the sample story.
@@ -34,4 +36,7 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 - Browser-only speech first: free and needs no keys. Chrome and Safari; Firefox can't listen.
 - The first `speak()` must come from a tap (Safari), so voice mode starts on a button.
 - The mic is off while the app is speaking, so it doesn't hear itself.
+- Hold To Talk is the default; hands-free is an option because Safari, iPhone especially,
+  may refuse a mic that no press started.
+- No `continuous` recognition: it's the mode iOS Safari is reported to stall in.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

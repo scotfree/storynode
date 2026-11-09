@@ -24,8 +24,11 @@ Three modes, sharing your place in the story:
 
 - **Map**: the whole story's shape, titles only. Click a page to read from there.
 - **Read**: a page of text with the choices as buttons.
-- **Voice**: one big button, made for a phone. Tap Start; it reads the page and
-  the choices, then listens. Tap while it's reading to answer straight away.
+- **Voice**: one big button, made for a phone. Tap once and it reads the page
+  and the choices. Then hold the button, say your answer, and let go. Holding
+  while it reads interrupts it. Hands-free (in Voice settings) opens the mic
+  after each reading instead. The panel at the bottom shows what it hears; tap
+  it for a log of how each answer was matched.
 
 Voice works in Chrome and Safari (Firefox can't listen). Better voices help a
 lot: on a Mac or iPhone, download an "Enhanced" or "Premium" voice in the

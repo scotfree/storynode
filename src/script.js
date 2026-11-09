@@ -19,7 +19,12 @@ export function choicesScript(choices) {
 export const HELP_SCRIPT = 'Say a choice by its number, like choice one, or by its name. '
     + 'You can also say repeat, choices, go back, or start over.';
 
-export function retryScript(attempt) {
+export function retryScript(attempt, { hold = false } = {}) {
+    if (hold) {
+        return attempt <= 1
+            ? "Sorry, I didn't catch that. Hold the button and say a number, like choice one, or a choice's name."
+            : 'Still not sure. Hold the button and try again.';
+    }
     return attempt <= 1
         ? "Sorry, I didn't catch that. Say a number, like choice one, or a choice's name."
         : 'Still not sure. Tap the button when you want to try again.';

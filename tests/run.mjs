@@ -4,8 +4,9 @@ import { readFileSync } from 'node:fs';
 import { loadStory, choicesOf, isEnding, parentsOf } from '../src/story.js';
 import { match, numberFrom, commandFrom, titleHits, hintPhrases, normalize } from '../src/matcher.js';
 import { layoutGraph } from '../src/layout.js';
-import { sentences, rankVoices } from '../src/speech.js';
-import { pageScript, choicesScript, numberWord } from '../src/script.js';
+import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from '../src/speech.js';
+import { pageScript, choicesScript, numberWord, retryScript } from '../src/script.js';
+import { createLog, matchLines } from '../src/voicelog.js';
 
 let passed = 0;
 let failed = 0;
@@ -13,6 +14,17 @@ let failed = 0;
 function test(name, fn) {
     try {
         fn();
+        console.log(`  ✓ ${name}`);
+        passed++;
+    } catch (err) {
+        console.error(`  ✗ ${name}\n    ${err.message}`);
+        failed++;
+    }
+}
+
+async function testAsync(name, fn) {
+    try {
+        await fn();
         console.log(`  ✓ ${name}`);
         passed++;
     } catch (err) {
@@ -211,6 +223,211 @@ test('the spoken page and choices', () => {
     assert.match(choicesScript([]), /The end/);
     assert.match(choicesScript([choices[0]]), /one way on/);
     assert.equal(numberWord(12), '12');
+});
+
+test('retry wording says hold in Hold To Talk', () => {
+    assert.match(retryScript(1, { hold: true }), /Hold the button/);
+    assert.match(retryScript(2, { hold: true }), /Hold the button/);
+    assert.doesNotMatch(retryScript(1), /Hold/);
+});
+
+test('speak only cancels when something is playing', () => {
+    globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+    let cancels = 0;
+    const synth = { speaking: false, pending: false, cancel() { cancels++; }, speak() {} };
+    const speaker = createSpeaker({ synth });
+    speaker.speak('Hello.');
+    assert.equal(cancels, 0);
+    synth.speaking = true;
+    speaker.speak('Hello again.');
+    assert.equal(cancels, 1);
+});
+
+// --- the matcher's trace and the log ---
+section('voice log');
+
+test('match explains each guess it tried', () => {
+    const { trace, kind } = match(['banana', 'the path'], choices);
+    assert.equal(kind, 'choice');
+    assert.equal(trace.length, 2);
+    assert.equal(trace[0].outcome, 'no word unique to one choice');
+    assert.equal(trace[1].outcome, 'title of choice 2');
+    assert.equal(match(['choice three'], choices).trace[0].outcome, 'number 3');
+    assert.equal(match(['go back'], choices).trace[0].outcome, 'command back');
+});
+
+test('matchLines reports scores and the outcome', () => {
+    const [line] = matchLines(match(['the path'], choices));
+    assert.match(line, /“the path”/);
+    assert.match(line, /2=1\/1/);
+    assert.match(line, /→ title of choice 2/);
+});
+
+test('the log drops the oldest entries past its cap', () => {
+    const log = createLog({ cap: 2, now: () => 0 });
+    log.add('a', '1');
+    log.add('b', '2');
+    log.add('c', '3');
+    assert.deepEqual(log.entries().map(e => e.text), ['2', '3']);
+});
+
+// --- listening, against a fake recognizer ---
+section('listening');
+
+function fakeRecognizer({ endsOnStop = true } = {}) {
+    return class Fake {
+        static made = [];
+        constructor() { Fake.made.push(this); }
+        start() { this.started = true; }
+        stop() {
+            this.stopped = true;
+            if (endsOnStop) this.onend();
+        }
+        abort() { this.aborted = true; }
+        hear(guesses, isFinal = true) {
+            const result = Object.assign(guesses.map(transcript => ({ transcript })), { isFinal });
+            this.onresult({ results: [result] });
+        }
+    };
+}
+
+function fakeTimers() {
+    const pending = new Map();
+    let next = 1;
+    return {
+        set(fn, ms) { pending.set(next, { fn, ms }); return next++; },
+        clear(id) { pending.delete(id); },
+        has: (ms) => [...pending.values()].some(t => t.ms === ms),
+        fire(ms) {
+            for (const [id, t] of [...pending]) {
+                if (t.ms === ms) {
+                    pending.delete(id);
+                    t.fn();
+                }
+            }
+        },
+    };
+}
+
+function listenWith(options = {}, fakeOptions = {}) {
+    const Fake = fakeRecognizer(fakeOptions);
+    const timers = fakeTimers();
+    const session = listenOnce({ RecognitionClass: Fake, timers, hints: false, ...options });
+    return { Fake, timers, session, r: () => Fake.made[Fake.made.length - 1] };
+}
+
+test('mergeSegments joins best guesses, then adds the last alternatives', () => {
+    assert.deepEqual(mergeSegments([]), []);
+    assert.deepEqual(mergeSegments([[], []]), []);
+    assert.deepEqual(mergeSegments([['beach', 'breach']]), ['beach', 'breach']);
+    assert.deepEqual(mergeSegments([['the'], ['beach', 'breach']]), ['the beach', 'beach', 'breach']);
+});
+
+await testAsync('stop() returns what was heard', async () => {
+    const { session, r } = listenWith({ hold: true });
+    r().onaudiostart();
+    r().hear(['choice two', 'choice to']);
+    session.stop();
+    const { alternatives, error } = await session.promise;
+    assert.deepEqual(alternatives, ['choice two', 'choice to']);
+    assert.equal(error, null);
+    assert.equal(r().stopped, true);
+});
+
+await testAsync('abort() discards what was heard', async () => {
+    const { session, r } = listenWith({ hold: true });
+    r().hear(['choice two']);
+    session.abort();
+    const { alternatives, error } = await session.promise;
+    assert.deepEqual(alternatives, []);
+    assert.equal(error, 'aborted');
+    assert.equal(r().aborted, true);
+});
+
+await testAsync('a held press re-arms at a pause and merges the segments', async () => {
+    const { Fake, session, r } = listenWith({ hold: true });
+    r().onaudiostart();
+    r().hear(['the']);
+    r().onend();
+    assert.equal(Fake.made.length, 2);
+    r().hear(['beach', 'breach']);
+    session.stop();
+    const { alternatives, segments } = await session.promise;
+    assert.deepEqual(alternatives, ['the beach', 'beach', 'breach']);
+    assert.equal(segments.length, 2);
+});
+
+await testAsync('hands-free does not re-arm: a pause ends it', async () => {
+    const { Fake, session, r } = listenWith({ hold: false });
+    r().onaudiostart();
+    r().hear(['two']);
+    r().onend();
+    const { alternatives } = await session.promise;
+    assert.deepEqual(alternatives, ['two']);
+    assert.equal(Fake.made.length, 1);
+});
+
+await testAsync('interim words count if no final result arrives', async () => {
+    const { session, r } = listenWith({ hold: true });
+    r().onaudiostart();
+    r().hear(['two'], false);
+    session.stop();
+    assert.deepEqual((await session.promise).alternatives, ['two']);
+});
+
+await testAsync('gives up 3 seconds after release if the browser never ends', async () => {
+    const { session, r, timers } = listenWith({ hold: true }, { endsOnStop: false });
+    r().onaudiostart();
+    r().hear(['two'], false);
+    session.stop();
+    timers.fire(3000);
+    assert.deepEqual((await session.promise).alternatives, ['two']);
+    assert.equal(r().aborted, true);
+});
+
+await testAsync('reports a mic that never opens', async () => {
+    const { session, timers } = listenWith({ hold: true });
+    timers.fire(2000);
+    assert.equal((await session.promise).error, 'mic-timeout');
+});
+
+await testAsync('the mic-open timer stops once the mic opens', async () => {
+    const { session, r, timers } = listenWith({ hold: true });
+    r().onaudiostart();
+    assert.equal(timers.has(2000), false);
+    session.abort();
+    await session.promise;
+});
+
+await testAsync('hands-free stops itself after silence if the browser does not', async () => {
+    const { session, r, timers } = listenWith({ hold: false });
+    r().onaudiostart();
+    assert.equal(timers.has(10000), true);
+    r().hear(['two']);
+    timers.fire(2000);
+    assert.equal(r().stopped, true);
+    assert.deepEqual((await session.promise).alternatives, ['two']);
+});
+
+await testAsync('fatal errors come through and end a hold', async () => {
+    const { Fake, session, r } = listenWith({ hold: true });
+    r().onerror({ error: 'not-allowed' });
+    r().onend();
+    assert.equal((await session.promise).error, 'not-allowed');
+    assert.equal(Fake.made.length, 1);
+});
+
+await testAsync('retries once without hints if they are rejected', async () => {
+    const { Fake, session, r } = listenWith({ hold: false, hints: true, phrases: ['x'] });
+    r().onerror({ error: 'phrases-not-supported' });
+    r().onend();
+    assert.equal(Fake.made.length, 2);
+    r().onaudiostart();
+    r().hear(['two']);
+    r().onend();
+    const { alternatives, hintsRejected } = await session.promise;
+    assert.deepEqual(alternatives, ['two']);
+    assert.equal(hintsRejected, true);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
