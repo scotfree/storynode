@@ -30,7 +30,8 @@ built-in one.
 
 Three modes, sharing your place in the story:
 
-- **Map**: the whole story's shape, titles only. Click a page to read from there.
+- **Map**: the whole story's shape, titles only. Click a page to edit it; the
+  edit form also has "Read from here".
 - **Read**: a page of text with the choices as buttons.
 - **Voice**: one big button, made for a phone. Tap once and it reads the page
   and the choices. Then hold the button, say your answer, and let go. Holding
@@ -54,6 +55,13 @@ read-back say "keep it", "try again" or "cancel"; while giving the text,
 with the new choice read out among the others.
  It's saved with the story in this
 browser only.
+
+**Editing a node**: next to "Add new node" is "Edit this node", and every node
+on the Map opens the same form: the creation form with the node's title and
+text already in it. In Voice, say "edit this node" and it asks the same
+questions as for a new node; "keep it" at the title or the text leaves that
+part as it was. Only the words change: the node's place and its choices stay.
+Editing a story's first page renames the story if it was named after that page.
 
 **A better voice (experimental)**: under Voice settings, the Voice switch goes
 from Browser to Model: Small or Model: Large. The model is

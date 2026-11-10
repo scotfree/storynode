@@ -117,3 +117,27 @@ export function addNode(data, { parent, title, text }) {
     const id = idFor(title, nodes.map(n => n?.id));
     return { data: { ...data, nodes: [...nodes, { id, title, text, parent }] }, id, errors };
 }
+
+// Changes a node's title and text in story data; its id, parents and
+// children stay. The first page is the story's cover, so if the story was
+// named after it, the story is renamed with it. Returns { data, errors }.
+export function editNode(data, id, { title, text }) {
+    const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
+    const old = nodes.find(n => n?.id === id);
+    const errors = [];
+    title = String(title ?? '').trim();
+    text = String(text ?? '').trim();
+    if (!old) errors.push(`The node "${id}" doesn't exist.`);
+    if (!title) errors.push('The node needs a title.');
+    if (!text) errors.push('The node needs some text.');
+    if (errors.length) return { data, errors };
+    const isCover = id === (data.start ?? nodes.find(n => parentsOf(n).length === 0)?.id);
+    return {
+        data: {
+            ...data,
+            ...(isCover && data.title === old.title ? { title } : {}),
+            nodes: nodes.map(n => (n === old ? { ...n, title, text } : n)),
+        },
+        errors,
+    };
+}

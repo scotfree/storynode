@@ -275,19 +275,25 @@ button:disabled {
 }
 
 /* "Add new node": smaller than the choices it sits under. */
-.add-link {
-    display: block;
+.page-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
     margin: -1rem 0 2rem;
+}
+
+.voice .page-links {
+    margin: 0;
+    justify-content: center;
+}
+
+.add-link {
     padding: 0.25rem 0;
     background: none;
     border: none;
     color: var(--accent);
     font-size: 0.9rem;
     text-decoration: underline;
-}
-
-.voice .add-link {
-    margin: 0;
 }
 
 .add-form h2 {

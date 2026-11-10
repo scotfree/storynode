@@ -31,8 +31,8 @@ const TEXT_ASK = "Say it a sentence or two at a time, and say done when you're f
 // Phrases to bias the recognizer toward, where there are any to expect.
 export function composeHints(state) {
     if (state.stage === 'confirm-title' || state.stage === 'confirm-text') return ['keep it', 'try again', 'cancel'];
-    if (state.stage === 'text') return ['done', 'scratch that', 'cancel'];
-    return ['cancel'];
+    if (state.stage === 'text') return ['done', 'scratch that', 'cancel', ...(state.kind === 'edit' ? ['keep it'] : [])];
+    return state.kind === 'edit' ? ['keep it', 'cancel'] : ['cancel'];
 }
 
 function commandIn(alternatives, table) {
@@ -58,19 +58,29 @@ export function tidyChunk(heard) {
 
 export const composedText = (state) => state.chunks.join(' ');
 
-// kind: 'node' (a page after the current one) or 'story' (a whole new story,
-// whose title and overview become its first page).
-export const startCompose = (kind = 'node') => ({ kind, stage: 'title', title: '', chunks: [] });
+// kind: 'node' (a page after the current one), 'story' (a whole new story,
+// whose title and overview become its first page) or 'edit' (the same
+// questions about an existing page, given as `original`: { title, text };
+// "keep it" at either question leaves that part as it is).
+export const startCompose = (kind = 'node', original = null) => ({ kind, stage: 'title', title: '', chunks: [], original });
+
+const isEdit = (state) => state.kind === 'edit';
+const KEEP_AS_IS = { keep: ['keep it', 'keep', 'keep that', 'same', 'the same', 'no change', 'leave it', 'skip'] };
+const EDIT_TEXT_ASK = "Say keep it to leave it as it is, or say the new text a sentence or two at a time, and say done when you're finished.";
 
 const isStory = (state) => state.kind === 'story';
-const textAsk = (state) => (isStory(state)
-    ? `Now the overview, like the back of a book jacket. ${TEXT_ASK}`
-    : `Now the text. ${TEXT_ASK}`);
+const textAsk = (state) => {
+    if (isEdit(state)) return `Now the text. ${EDIT_TEXT_ASK}`;
+    return isStory(state)
+        ? `Now the overview, like the back of a book jacket. ${TEXT_ASK}`
+        : `Now the text. ${TEXT_ASK}`;
+};
 
 // What to say on arriving at (or coming back to) a stage.
 export function composePrompt(state) {
     switch (state.stage) {
         case 'title':
+            if (isEdit(state)) return `Editing this page. Its title is: ${state.original.title}. Say the new title, or say keep it.`;
             return isStory(state) ? "A new story. What's its title?" : "A new page here. What's its title?";
         case 'confirm-title':
             return `The title is: ${state.title}. ${CONFIRM_ASK}`;
@@ -83,19 +93,19 @@ export function composePrompt(state) {
     }
 }
 
-const label = (state) => (isStory(state) ? 'New story' : 'New node');
+const label = (state) => (isEdit(state) ? 'Editing' : isStory(state) ? 'New story' : 'New node');
 
 // A short line for the screen.
 export function composeStatus(state) {
     switch (state.stage) {
-        case 'title': return `${label(state)}: say its title.`;
+        case 'title': return isEdit(state) ? 'Editing: say the new title, or “keep it”.' : `${label(state)}: say its title.`;
         case 'confirm-title': return `Title: “${state.title}”. Keep it, try again, or cancel?`;
         case 'text': return `${label(state)}: say the ${isStory(state) ? 'overview' : 'text'}, then “done”.`;
         default: return 'Keep it, try again, or cancel?';
     }
 }
 
-const cancelled = (state) => ({ state, say: 'Okay, nothing added.', outcome: 'cancel' });
+const cancelled = (state) => ({ state, say: isEdit(state) ? 'Okay, nothing changed.' : 'Okay, nothing added.', outcome: 'cancel' });
 const on = (state, say) => ({ state, say: say ?? composePrompt(state), outcome: 'continue' });
 
 export function composeStep(state, alternatives) {
@@ -105,6 +115,7 @@ export function composeStep(state, alternatives) {
     if (state.stage === 'title') {
         if (!heard) return on(state, "I didn't hear a title. What's the title?");
         if (commandIn(guesses, { cancel: CONFIRM.cancel })) return cancelled(state);
+        if (isEdit(state) && commandIn(guesses, KEEP_AS_IS)) return on({ ...state, stage: 'text', title: state.original.title });
         return on({ ...state, stage: 'confirm-title', title: tidyTitle(heard) });
     }
 
@@ -112,6 +123,9 @@ export function composeStep(state, alternatives) {
         if (!heard) return on(state, state.chunks.length ? "I didn't hear anything. Go on, or say done." : `I didn't hear anything. ${TEXT_ASK}`);
         const command = commandIn(guesses, TEXT_COMMANDS);
         if (command === 'cancel') return cancelled(state);
+        if (isEdit(state) && state.chunks.length === 0 && commandIn(guesses, KEEP_AS_IS)) {
+            return on({ ...state, stage: 'confirm-text', chunks: [state.original.text] });
+        }
         if (command === 'undo') {
             if (state.chunks.length === 0) return on(state, "There's nothing to remove yet.");
             return on({ ...state, chunks: state.chunks.slice(0, -1) }, 'Removed the last part. Go on, or say done.');
@@ -131,7 +145,7 @@ export function composeStep(state, alternatives) {
         if (answer === 'again') return on({ ...state, stage: 'title', title: '' }, "Okay. What's the title?");
         return on(state, heard ? `Sorry, I didn't catch that. ${composePrompt(state)}` : CONFIRM_ASK);
     }
-    if (answer === 'keep') return { state, say: 'Added.', outcome: 'save' };
+    if (answer === 'keep') return { state, say: isEdit(state) ? 'Saved.' : 'Added.', outcome: 'save' };
     if (answer === 'again') return on({ ...state, stage: 'text', chunks: [] }, `Okay, the text again. ${TEXT_ASK}`);
     return on(state, heard ? `Sorry, I didn't catch that. ${CONFIRM_ASK}` : CONFIRM_ASK);
 }

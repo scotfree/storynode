@@ -1,7 +1,7 @@
 // Unit tests for the pure modules. Run: node tests/run.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { loadStory, choicesOf, isEnding, parentsOf, addNode, idFor } from '../src/story.js';
+import { loadStory, choicesOf, isEnding, parentsOf, addNode, editNode, idFor } from '../src/story.js';
 import { match, numberFrom, commandFrom, titleHits, hintPhrases, normalize } from '../src/matcher.js';
 import { layoutGraph } from '../src/layout.js';
 import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from '../src/speech.js';
@@ -877,6 +877,80 @@ await testAsync('cancel stops at once and keeps the place for a resume', async (
     speaker.speak('One. Two. Three.', { from: speaker.position() });
     await tick();
     assert.ok(log.includes('play Two.'));
+});
+
+section('editing a node');
+
+test('changes the title and text, and nothing else', () => {
+    const { data, errors } = editNode(tiny, 'b', { title: ' Turn left ', text: ' A new left. ' });
+    assert.deepEqual(errors, []);
+    assert.deepEqual(data.nodes[1], { id: 'b', title: 'Turn left', text: 'A new left.', parent: 'a' });
+    assert.equal(tiny.nodes[1].title, 'Go left');           // the original is untouched
+    assert.equal(data.title, 'Tiny');
+    const { story } = loadStory(data);
+    assert.deepEqual(choicesOf(story, 'a').map(n => n.title), ['Turn left', 'Go right']);
+    assert.deepEqual(choicesOf(story, 'b').map(n => n.id), ['d']);
+});
+
+test('a story named after its first page is renamed with it', () => {
+    const { data: made } = createStory({ title: 'The Old Well', text: 'x' });
+    assert.equal(editNode(made, 'start', { title: 'The New Well', text: 'y' }).data.title, 'The New Well');
+    assert.equal(editNode(tiny, 'a', { title: 'Beginning', text: 'y' }).data.title, 'Tiny');   // had its own name
+});
+
+test('refuses a blank title or text, or a node that is not there', () => {
+    assert.equal(editNode(tiny, 'b', { title: '', text: 'x' }).errors.length, 1);
+    assert.equal(editNode(tiny, 'b', { title: 'x', text: ' ' }).errors.length, 1);
+    const bad = editNode(tiny, 'nope', { title: 'x', text: 'x' });
+    assert.equal(bad.errors.length, 1);
+    assert.equal(bad.data, tiny);
+});
+
+test('"edit this node" is a command, never read with the choices', () => {
+    for (const said of ['edit this node', 'Edit this note.', 'edit node please', 'edit']) assert.equal(commandFrom(said), 'edit', said);
+    assert.doesNotMatch(choicesScript([{ id: 'b', title: 'Go left' }, { id: 'c', title: 'Go right' }]), /edit/i);
+    assert.match(HELP_SCRIPT, /edit this node/);
+});
+
+// Feeds utterances through an edit of { Go left / Left. }.
+function redo(...utterances) {
+    let step = { state: startCompose('edit', { title: 'Go left', text: 'Left.' }), outcome: 'continue' };
+    for (const said of utterances) step = composeStep(step.state, [said]);
+    return step;
+}
+
+test('editing by voice asks the same questions, starting from what is there', () => {
+    assert.match(composePrompt(redo().state), /Its title is: Go left\. Say the new title, or say keep it\./);
+    let step = redo('turn left', 'keep it');
+    assert.equal(step.state.stage, 'text');
+    assert.match(step.say, /Say keep it to leave it as it is/);
+    step = redo('turn left', 'keep it', 'a new left', 'done');
+    assert.match(step.say, /Here's the page\. Turn left\. A new left\. Say keep it/);
+    step = composeStep(step.state, ['keep it']);
+    assert.equal(step.outcome, 'save');
+    assert.equal(step.say, 'Saved.');
+    assert.equal(step.state.title, 'Turn left');
+    assert.equal(composedText(step.state), 'A new left.');
+});
+
+test('"keep it" leaves the title, the text, or both as they were', () => {
+    let step = redo('keep it');
+    assert.equal(step.state.stage, 'text');
+    assert.equal(step.state.title, 'Go left');
+    step = redo('turn left', 'yes', 'keep it');
+    assert.equal(step.state.stage, 'confirm-text');
+    assert.equal(composedText(step.state), 'Left.');
+    assert.equal(redo('keep it', 'keep it', 'keep it').outcome, 'save');
+    // Once new text has started, "keep it" is just words.
+    assert.equal(composedText(redo('keep it', 'new words', 'keep it').state), 'New words. Keep it.');
+    // And it means nothing special when making a new node.
+    assert.equal(composeStep(startCompose(), ['keep it']).state.title, 'Keep it');
+});
+
+test('cancelling an edit changes nothing', () => {
+    assert.equal(redo('cancel').outcome, 'cancel');
+    assert.equal(redo('cancel').say, 'Okay, nothing changed.');
+    assert.equal(redo('keep it', 'cancel').outcome, 'cancel');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

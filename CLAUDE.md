@@ -18,7 +18,8 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   counter cancels stale async steps when the user taps or changes mode.
 - `src/story.js`: the story model. Nodes have `id`, `title`, `text`, `parent` (string or
   list) and optional `aliases`; choices are the children. Validates ids, parents, loops.
-  `addNode` appends a node under a parent in the JSON form, making its id from the title.
+  `addNode` appends a node under a parent in the JSON form, making its id from the title;
+  `editNode` changes a node's title and text and keeps its id.
 - `src/matcher.js`: turns recognizer guesses into a choice (number, title/alias) or a
   command. Picks a title only when it clearly wins on words no other choice has;
   otherwise returns `none` so the app asks again. Sound-alikes ("choice to" → 2) only
@@ -59,6 +60,10 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   read back and confirmed, and its commands (done, scratch that, cancel) only count as
   the whole utterance. Text comes in several short utterances, since there's no
   `continuous` mode.
+- Editing reuses creation: the same form, filled in, and the same dictation with `kind`
+  'edit' (where "keep it" at a question leaves that part unchanged). Map nodes open the
+  edit form, which carries "Read from here" so the map still navigates. Ids never change
+  on edit, so saved places and links between nodes hold.
 - Several stories: built-ins are fetched from `stories/` via `index.json` (a static page
   can't list a folder); anything made, opened or added to in the browser lives in
   localStorage under `storynode_library`, keyed by story id, and a built-in's id there

@@ -27,7 +27,7 @@
         <!-- Map: the whole story's shape, titles only. -->
         <section id="map-view" class="view" hidden>
             <h1 class="story-title" id="map-title"></h1>
-            <p class="hint">Click a node to read from there.</p>
+            <p class="hint">Click a node to edit it, or to read from there.</p>
             <div class="map-scroll"><svg id="map" role="img" aria-label="Story map"></svg></div>
         </section>
 
@@ -38,7 +38,10 @@
                 <div id="read-text" class="story-text"></div>
                 <ol id="read-choices" class="choices"></ol>
                 <p id="read-end" class="the-end" hidden></p>
-                <button id="read-add" class="add-link" type="button"></button>
+                <div class="page-links">
+                    <button id="read-add" class="add-link" type="button"></button>
+                    <button id="read-edit" class="add-link" type="button"></button>
+                </div>
                 <div class="row">
                     <button id="read-back" class="ghost">Back</button>
                     <button id="read-restart" class="ghost">Start over</button>
@@ -59,7 +62,10 @@
             </div>
             <p id="voice-status" class="voice-status" aria-live="polite"></p>
             <ol id="voice-choices" class="voice-choices"></ol>
-            <button id="voice-add" class="add-link" type="button"></button>
+            <div class="page-links">
+                <button id="voice-add" class="add-link" type="button"></button>
+                <button id="voice-edit" class="add-link" type="button"></button>
+            </div>
             <details class="voice-settings">
                 <summary>Voice settings</summary>
                 <fieldset id="voice-engine" class="switch">
@@ -107,6 +113,7 @@
             <p id="add-errors" class="errors" hidden></p>
             <div class="row">
                 <button id="add-cancel" class="ghost" type="button">Cancel</button>
+                <button id="add-read" class="ghost" type="button" hidden>Read from here</button>
                 <button type="submit">Submit</button>
             </div>
         </form>

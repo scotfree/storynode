@@ -3,11 +3,11 @@
 //   #read  — a page of text, with the choices as buttons
 //   #voice — a big button: it reads the page and the choices, then listens
 
-import { loadStory, choicesOf, isEnding, addNode, idFor } from './story.js';
+import { loadStory, choicesOf, isEnding, addNode, editNode, idFor } from './story.js';
 import { layoutGraph } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices } from './speech.js';
-import { pageScript, choicesScript, HELP_SCRIPT, retryScript, ADD_LABEL } from './script.js';
+import { pageScript, choicesScript, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
 import { createSweep } from './arc.js';
 import { createClipSpeaker } from './clipspeaker.js';
@@ -223,10 +223,8 @@ function renderMap() {
         const text = svgEl('text', { x: box.x + box.w / 2, y: box.y + box.h / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central' });
         text.textContent = shorten(box.title);
         g.append(title, rect, text);
-        const open = () => {
-            goTo(box.id);
-            location.hash = '#read';
-        };
+        // Opens the node's edit form, which also offers to read from there.
+        const open = () => openAddDialog('edit', box.id);
         g.addEventListener('click', open);
         g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(); });
         return g;
@@ -506,6 +504,8 @@ async function command(name, run) {
             return startComposing(run, 'node');
         case 'story':
             return startComposing(run, 'story');
+        case 'edit':
+            return startComposing(run, 'edit');
         case 'help':
             if (!(await say(HELP_SCRIPT, run))) return;
             return awaitAnswer(run);
@@ -879,19 +879,45 @@ function saveNode({ parent, title, text }) {
     return { id, errors: [] };
 }
 
-let adding = 'node';    // what the form is for: 'node' or 'story'
+// Changes an existing node's title and text.
+function saveEdit({ id, title, text }) {
+    const { data, errors } = editNode(storyData, id, { title, text });
+    const problems = errors.length ? errors : loadStory(data).errors;
+    if (problems.length) return problems;
+    storyData = data;
+    story = loadStory(data).story;
+    local[storyId] = data;
+    saveLibrary();
+    renderPicker();     // the story is renamed with its first page
+    render();
+    return [];
+}
 
-function openAddDialog(kind = 'node') {
-    if (!story && kind === 'node') return;
+let adding = 'node';    // what the form is for: 'node', 'story' or 'edit'
+let editingId = null;   // the node being edited
+
+// One form for all three. Editing is the same form with the node's own words
+// in it; from the map it can be any node, and offers to read from there.
+function openAddDialog(kind = 'node', id = currentId) {
+    if (!story && kind !== 'story') return;
     stopVoice();
     voice.compose = null;
     setVoiceState('idle', voice.started ? '' : startHint());
     adding = kind;
+    editingId = kind === 'edit' ? id : null;
     $('add-form').reset();
-    $('add-heading').textContent = kind === 'story' ? NEW_STORY_LABEL : ADD_LABEL;
+    $('add-heading').textContent = { story: NEW_STORY_LABEL, edit: EDIT_LABEL }[kind] ?? ADD_LABEL;
     $('add-text-label').textContent = kind === 'story' ? 'Overview' : 'Text';
+    $('add-read').hidden = !(kind === 'edit' && mode() === 'map');
     if (kind === 'story') {
         $('add-hint').textContent = 'A title and a short overview, like the back of a book jacket. They become the story’s first page.';
+    } else if (kind === 'edit') {
+        const editing = story.byId.get(id);
+        $('add-title').value = editing.title;
+        $('add-text').value = editing.text;
+        $('add-hint').textContent = id === story.start
+            ? 'The story’s first page. Its choices stay as they are.'
+            : 'Its place in the story and its choices stay as they are.';
     } else {
         $('add-hint').replaceChildren('A new choice after ', el('strong', {}, node().title), '.');
     }
@@ -906,6 +932,7 @@ function submitAdd(e) {
     let errors;
     let id = null;
     if (adding === 'story') errors = addStory(fields);
+    else if (adding === 'edit') errors = saveEdit({ id: editingId, ...fields });
     else ({ id, errors } = saveNode({ parent: currentId, ...fields }));
     if (errors.length) {
         $('add-errors').textContent = errors.join('\n');
@@ -919,13 +946,21 @@ function submitAdd(e) {
     if (mode() === 'voice' && voice.started) voiceLoop(voice.run);
 }
 
+// From the map's edit form: go and read that node instead.
+function readFromEdited() {
+    $('add-dialog').close();
+    goTo(editingId);
+    location.hash = '#read';
+}
+
 // By voice. `voice.compose` outlives a run, so a press or STOP in the middle
 // carries on at the same question; going anywhere else in the story drops it.
 
 function startComposing(run, kind) {
-    voice.compose = { parent: currentId, state: startCompose(kind) };
+    const original = kind === 'edit' ? { title: node().title, text: node().text } : null;
+    voice.compose = { parent: currentId, state: startCompose(kind, original) };
     voice.retries = 0;
-    addLog('compose', kind === 'story' ? 'new story' : `new node after ${currentId}`);
+    addLog('compose', { story: 'new story', edit: `editing ${currentId}` }[kind] ?? `new node after ${currentId}`);
     return composeSay(composePrompt(voice.compose.state), run);
 }
 
@@ -935,27 +970,30 @@ async function composeSay(text, run) {
     awaitAnswer(run);
 }
 
+const composeName = (state) => (state.kind === 'edit' ? 'edit' : `new ${state.kind}`);
+
 async function composeListen(run, { hold = false } = {}) {
     const composing = voice.compose;
     const alternatives = await hear(run, {
         hold,
         phrases: composeHints(composing.state),
-        label: `new ${composing.state.kind}: ${composing.state.stage}`,
+        label: `${composeName(composing.state)}: ${composing.state.stage}`,
     });
     if (!alternatives || voice.compose !== composing) return;
 
     const { state, say: line, outcome } = composeStep(composing.state, alternatives);
-    addLog('result', `new ${composing.state.kind}: ${composing.state.stage} → ${outcome === 'continue' ? state.stage : outcome}`);
+    addLog('result', `${composeName(composing.state)}: ${composing.state.stage} → ${outcome === 'continue' ? state.stage : outcome}`);
     $('voice-heard').textContent = alternatives[0] ? `“${alternatives[0]}”` : 'Nothing heard';
 
     if (outcome !== 'continue') {
         let closing = line;
         if (outcome === 'save') {
             const fields = { title: state.title, text: composedText(state) };
-            const errors = state.kind === 'story'
-                ? addStory(fields)
-                : saveNode({ parent: composing.parent, ...fields }).errors;
-            if (errors.length) closing = `Sorry, that couldn't be added. ${errors[0]}`;
+            let errors;
+            if (state.kind === 'story') errors = addStory(fields);
+            else if (state.kind === 'edit') errors = saveEdit({ id: composing.parent, ...fields });
+            else errors = saveNode({ parent: composing.parent, ...fields }).errors;
+            if (errors.length) closing = `Sorry, that couldn't be saved. ${errors[0]}`;
         }
         voice.compose = null;
         if (!(await say(closing, run))) return;
@@ -965,7 +1003,7 @@ async function composeListen(run, { hold = false } = {}) {
     // Hands-free stops asking after a few silences; START picks it up again.
     voice.retries = alternatives.length ? 0 : voice.retries + 1;
     if (handsFree() && voice.retries > MAX_RETRIES) {
-        setVoiceState('idle', `Tap START to carry on with the new ${composing.state.kind}.`);
+        setVoiceState('idle', `Tap START to carry on with the ${composeName(composing.state)}.`);
         return;
     }
     composing.state = state;
@@ -977,6 +1015,11 @@ function setUpAddDialog() {
         $(id).textContent = ADD_LABEL;
         $(id).addEventListener('click', () => openAddDialog('node'));
     }
+    for (const id of ['read-edit', 'voice-edit']) {
+        $(id).textContent = EDIT_LABEL;
+        $(id).addEventListener('click', () => openAddDialog('edit'));
+    }
+    $('add-read').addEventListener('click', readFromEdited);
     $('add-cancel').addEventListener('click', () => $('add-dialog').close());
     $('add-form').addEventListener('submit', submitAdd);
     $('story-select').addEventListener('change', (e) => {
