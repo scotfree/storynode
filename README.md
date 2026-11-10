@@ -55,6 +55,17 @@ with the new choice read out among the others.
  It's saved with the story in this
 browser only.
 
+**A better voice (experimental)**: under Voice settings, the Voice switch goes
+from Browser to Model: Small or Model: Large. The model is
+[Kokoro](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX), a neural
+voice that runs in the page: nothing is sent anywhere and there's no key or
+cost, but it's a big download the first time (roughly 90 MB for Small, 330 MB
+for Large), shown on a progress bar and then kept by the browser. Small runs on
+the processor; Large wants a browser with WebGPU. The browser voice reads while
+the model loads, and takes over for any sentence the model can't do. This is
+the one feature that fetches code and data from outside this folder (jsDelivr
+and Hugging Face).
+
 Voice works in Chrome and Safari (Firefox can't listen). Better voices help a
 lot: on a Mac or iPhone, download an "Enhanced" or "Premium" voice in the
 system's accessibility settings, then pick it under Voice settings.

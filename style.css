@@ -600,6 +600,75 @@ button:disabled {
     margin: 0.5rem 0;
 }
 
+/* The Voice switch: one of three, like a slider with stops. */
+.switch {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 0.75rem 0 0.5rem;
+    padding: 0;
+    border: none;
+}
+
+.switch legend {
+    float: left;
+    margin-right: auto;
+    padding: 0;
+}
+
+.voice-settings .switch label {
+    margin: 0;
+    display: block;
+}
+
+.switch input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.switch span {
+    display: block;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--line);
+    margin-left: -1px;
+    font-size: 0.85rem;
+    color: var(--ink);
+    background: var(--surface);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.switch label:first-of-type span {
+    border-radius: 999px 0 0 999px;
+    padding-left: 0.8rem;
+}
+
+.switch label:last-of-type span {
+    border-radius: 0 999px 999px 0;
+    padding-right: 0.8rem;
+}
+
+.switch input:checked + span {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+}
+
+.switch input:focus-visible + span {
+    outline: 2px solid var(--glow);
+    outline-offset: 2px;
+}
+
+.model-status progress {
+    width: 100%;
+    accent-color: var(--accent);
+}
+
+.model-status .hint {
+    margin: 0.25rem 0 0.5rem;
+}
+
 .voice-settings select {
     max-width: 65%;
 }

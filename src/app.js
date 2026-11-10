@@ -10,6 +10,9 @@ import { createSpeaker, listenOnce, support, rankVoices } from './speech.js';
 import { pageScript, choicesScript, HELP_SCRIPT, retryScript, ADD_LABEL } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
 import { createSweep } from './arc.js';
+import { createClipSpeaker } from './clipspeaker.js';
+import { createModelVoice, modelNote, loadProgress, MODEL_SIZES, MODEL_VOICES } from './modelvoice.js';
+import { createPlayer } from './player.js';
 import { createStory, listStories, overviewOf, NEW_STORY_LABEL } from './library.js';
 import { startCompose, composeStep, composePrompt, composeStatus, composeHints, composedText } from './compose.js';
 
@@ -35,7 +38,17 @@ const svgEl = (tag, attrs = {}) => {
     return node;
 };
 
-const speaker = createSpeaker();
+// Two ways to read aloud, with the same controls: the browser's own voice, and
+// a model that runs in the page and plays clips (falling back to the browser
+// voice for anything it can't do yet). `speaker` is whichever is switched on.
+const browserSpeaker = createSpeaker();
+const modelVoice = createModelVoice({
+    makeWorker: () => new Worker(new URL('./model-worker.js', import.meta.url), { type: 'module' }),
+    onChange: (state) => showModelState(state),
+});
+const player = createPlayer();
+const modelSpeaker = createClipSpeaker({ source: modelVoice, player, fallback: browserSpeaker });
+let speaker = browserSpeaker;
 const can = support();
 
 let story = null;
@@ -509,7 +522,8 @@ async function firstStart() {
     voice.started = true;
     stopVoice();
     const run = voice.run;
-    speaker.unlock();
+    browserSpeaker.unlock();
+    player.unlock();
     if (can.listen && navigator.mediaDevices?.getUserMedia) {
         setVoiceState('reading', 'Allow the microphone to answer by voice.');
         try {
@@ -737,34 +751,105 @@ function setUpVoiceLog() {
 }
 
 function saveVoiceSettings() {
-    writeJson(VOICE_KEY, { name: $('voice-select').value, rate: Number($('voice-rate').value), auto: voice.handsFree });
+    writeJson(VOICE_KEY, {
+        name: $('voice-select').value,
+        rate: Number($('voice-rate').value),
+        auto: voice.handsFree,
+        engine: engine(),
+        modelVoice: $('model-voice-select').value,
+    });
+}
+
+// 'browser', or a model size: 'small' or 'large'.
+const engine = () => document.querySelector('#voice-engine input:checked')?.value ?? 'browser';
+
+let shownModelStatus = 'off';
+
+function showModelState(state) {
+    const on = state.status !== 'off';
+    $('model-status').hidden = !on;
+    if (!on) {
+        shownModelStatus = 'off';
+        return;
+    }
+    const bar = $('model-progress');
+    bar.hidden = state.status !== 'loading';
+    const { total, fraction } = loadProgress(state.files);
+    // No number yet, or downloaded and starting up: the bar just shows it's busy.
+    if (total === 0 || fraction >= 1) bar.removeAttribute('value');
+    else bar.value = fraction;
+    $('model-note').textContent = modelNote(state);
+    if (state.status === shownModelStatus) return;
+    shownModelStatus = state.status;
+    if (state.status === 'failed') addLog('error', `model: ${state.error}`);
+    if (state.status === 'ready') addLog('mic', `model ready: ${state.size}, ${state.device}`);
+}
+
+// Switches between the browser voice and a model. The model starts loading
+// (or comes out of the browser's cache) as soon as it's picked.
+function useEngine(name) {
+    const model = Object.hasOwn(MODEL_SIZES, name);
+    speaker = model ? modelSpeaker : browserSpeaker;
+    if (model) modelVoice.load(name);
+    else modelVoice.unload();
+    $('browser-voice-row').hidden = model;
+    $('model-voice-row').hidden = !model;
 }
 
 function setUpVoiceSettings() {
     const saved = readJson(VOICE_KEY) ?? {};
     const select = $('voice-select');
     const fill = () => {
-        const voices = rankVoices(speaker.voices());
+        const voices = rankVoices(browserSpeaker.voices());
         if (voices.length === 0) return;
         const chosen = voices.find(v => v.name === saved.name) ?? voices[0];
         select.replaceChildren(...voices.map(v => new Option(`${v.name} (${v.lang})`, v.name, false, v === chosen)));
-        speaker.setVoice(chosen);
+        browserSpeaker.setVoice(chosen);
     };
     fill();
     if (globalThis.speechSynthesis) speechSynthesis.addEventListener('voiceschanged', fill);
     const save = saveVoiceSettings;
     select.addEventListener('change', () => {
-        speaker.setVoice(speaker.voices().find(v => v.name === select.value) ?? null);
+        browserSpeaker.setVoice(browserSpeaker.voices().find(v => v.name === select.value) ?? null);
         save();
     });
+
+    const modelSelect = $('model-voice-select');
+    modelSelect.replaceChildren(...MODEL_VOICES.map(v => new Option(v.name, v.id, false, v.id === saved.modelVoice)));
+    modelVoice.setVoice(modelSelect.value);
+    modelSelect.addEventListener('change', () => {
+        modelVoice.setVoice(modelSelect.value);
+        save();
+    });
+
+    const setRate = () => {
+        const rate = Number($('voice-rate').value);
+        browserSpeaker.setRate(rate);
+        modelSpeaker.setRate(rate);
+    };
     $('voice-rate').value = saved.rate ?? 1;
-    speaker.setRate(Number($('voice-rate').value));
+    setRate();
     $('voice-rate').addEventListener('input', () => {
-        speaker.setRate(Number($('voice-rate').value));
+        setRate();
         save();
     });
     voice.handsFree = saved.auto ?? false;
     syncDial();
+
+    const startWith = Object.hasOwn(MODEL_SIZES, saved.engine) ? saved.engine : 'browser';
+    document.querySelector(`#voice-engine input[value="${startWith}"]`).checked = true;
+    useEngine(startWith);
+    $('voice-engine').addEventListener('change', () => {
+        // Stops any reading, and keeps the place so START can pick it up.
+        const place = placeNow();
+        stopVoice();
+        voice.resume = place;
+        player.unlock();        // the tap on the switch is what allows audio
+        useEngine(engine());
+        save();
+        addLog('mic', `voice: ${engine()}`);
+        setVoiceState('idle', voice.started ? '' : startHint());
+    });
 
     $('voice-support').textContent = [
         can.speak ? 'Reading aloud: yes.' : "Reading aloud: this browser can't.",

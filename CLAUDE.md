@@ -27,6 +27,11 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   because Chrome cuts long ones off) and `SpeechRecognition` (`listenOnce`: fresh
   non-continuous sessions, re-armed while a press is held, merged into up to 5 guesses,
   phrase hints when supported, timeouts for sessions that never end).
+- `src/clipspeaker.js`: a speaker with the same shape as the browser one, but playing audio
+  clips from a `source`, a sentence at a time, with the browser voice as fallback.
+- `src/modelvoice.js`, `src/model-worker.js`: the Kokoro model as a clip source. The worker
+  imports kokoro-js from a CDN on demand; the main side queues sentences and caches clips.
+- `src/player.js`: plays clips through Web Audio.
 - `src/library.js`: the list of stories (built-in plus this browser's) and `createStory`.
 - `src/compose.js`: the spoken conversation for dictating a new node or story (title → read back →
   text in parts until "done" → read back → save), as a pure step function.
@@ -59,4 +64,10 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   localStorage under `storynode_library`, keyed by story id, and a built-in's id there
   overrides the file. A new story is made exactly like a node (same form, same dictation):
   its title and overview become its first page, so there's no separate cover screen.
+- Voices are swappable behind the speaker shape (`speak`, `cancel`, `position`, `unlock`,
+  `setRate`). Anything that isn't the browser voice should be a new clip source for
+  `clipspeaker.js` (returning null to hand a sentence to the browser voice), not a new
+  speaker. The model voice is opt-in and the only exception to "no dependencies": nothing
+  from outside is loaded unless it's switched on. Speed goes to the model as its own
+  `speed`, not as playback rate, so pitch stays put.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

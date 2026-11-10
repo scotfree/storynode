@@ -8,6 +8,8 @@ import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from 
 import { pageScript, choicesScript, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
 import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
+import { createClipSpeaker } from '../src/clipspeaker.js';
+import { createModelVoice, modelNote, loadProgress } from '../src/modelvoice.js';
 import { createStory, listStories, overviewOf } from '../src/library.js';
 import { startCompose, composeStep, composePrompt, composeHints, composedText, tidyTitle, tidyChunk } from '../src/compose.js';
 
@@ -723,6 +725,158 @@ test('"add new story" is a command and dictates like a node', () => {
 test('a story with only its first page says so instead of "The end"', () => {
     assert.match(choicesScript([], { blank: true }), /no more pages yet/);
     assert.match(choicesScript([]), /The end/);
+});
+
+section('model voice');
+
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// A stand-in for the model's worker: records what it's sent, and the test
+// answers by hand.
+function fakeWorker() {
+    const w = { sent: [], terminated: false, postMessage(m) { w.sent.push(m); }, terminate() { w.terminated = true; } };
+    w.reply = (data) => w.onmessage({ data });
+    w.speaks = () => w.sent.filter(m => m.type === 'speak');
+    return w;
+}
+
+function modelWith() {
+    const workers = [];
+    const states = [];
+    const model = createModelVoice({
+        makeWorker: () => { workers.push(fakeWorker()); return workers.at(-1); },
+        onChange: (s) => states.push(s),
+    });
+    return { model, workers, states, w: () => workers.at(-1) };
+}
+
+await testAsync('loads a size, reports progress, then makes clips one at a time', async () => {
+    const { model, w, states } = modelWith();
+    assert.equal(await model.clip('Too early.'), null);     // not loaded: the browser voice's job
+    model.load('small');
+    assert.deepEqual(w().sent[0], { type: 'load', dtype: 'q8', device: 'wasm' });
+    assert.equal(await model.clip('Still loading.'), null);
+    w().reply({ type: 'progress', file: 'model.onnx', loaded: 23 * 1048576, total: 92 * 1048576 });
+    assert.equal(loadProgress(model.state().files).fraction, 0.25);
+    assert.match(modelNote(model.state()), /23 of 92 MB/);
+    w().reply({ type: 'ready', device: 'wasm' });
+    assert.equal(states.at(-1).status, 'ready');
+
+    const one = model.clip('One.', { rate: 1.2 });
+    const two = model.clip('Two.');
+    assert.equal(w().speaks().length, 1);                   // the second waits its turn
+    assert.deepEqual(w().speaks()[0], { type: 'speak', id: 1, text: 'One.', voice: 'af_heart', speed: 1.2 });
+    w().reply({ type: 'audio', id: 1, samples: 'A', sampleRate: 24000 });
+    assert.deepEqual(await one, { samples: 'A', sampleRate: 24000 });
+    w().reply({ type: 'failed', id: 2, message: 'no' });
+    assert.equal(await two, null);
+    // Asked again: from the cache, without the worker.
+    assert.deepEqual(await model.clip('One.', { rate: 1.2 }), { samples: 'A', sampleRate: 24000 });
+    assert.equal(w().speaks().length, 2);
+});
+
+await testAsync('drop() lets go of waiting sentences but keeps the one in progress', async () => {
+    const { model, w } = modelWith();
+    model.load('large');
+    assert.equal(w().sent[0].dtype, 'fp32');
+    assert.equal(w().sent[0].device, 'webgpu');
+    w().reply({ type: 'ready', device: 'webgpu' });
+    const one = model.clip('One.');
+    const two = model.clip('Two.');
+    model.drop();
+    assert.equal(await one, null);
+    assert.equal(await two, null);
+    w().reply({ type: 'audio', id: 1, samples: 'A', sampleRate: 24000 });
+    assert.deepEqual(await model.clip('One.'), { samples: 'A', sampleRate: 24000 });   // kept for a Repeat
+    assert.equal(w().speaks().length, 1);                   // "Two." was never sent
+});
+
+await testAsync('changing size or switching off ends the old worker; errors fall back', async () => {
+    const { model, workers, w } = modelWith();
+    model.load('small');
+    w().reply({ type: 'ready', device: 'wasm' });
+    const pending = model.clip('One.');
+    model.load('large');
+    assert.equal(workers[0].terminated, true);
+    assert.equal(await pending, null);
+    workers[0].reply?.({ type: 'ready', device: 'wasm' });  // a late word from the old one is ignored
+    assert.equal(model.state().status, 'loading');
+    w().reply({ type: 'error', message: 'offline' });
+    assert.equal(model.state().status, 'failed');
+    assert.match(modelNote(model.state()), /Couldn't load the model \(offline\)/);
+    assert.equal(await model.clip('One.'), null);
+    model.unload();
+    assert.equal(model.state().status, 'off');
+    assert.equal(modelNote(model.state()), '');
+});
+
+// A clip speaker over fakes: clips are just their sentence, and the test says
+// when each one finishes playing.
+function clipSpeakerWith({ missing = [] } = {}) {
+    const log = [];
+    let endPlay = null;
+    const source = {
+        clip: async (text) => { log.push(`clip ${text}`); return missing.includes(text) ? null : text; },
+        drop: () => log.push('drop'),
+    };
+    const player = {
+        unlock() {},
+        play: (clip) => new Promise((resolve) => { log.push(`play ${clip}`); endPlay = resolve; }),
+        stop: () => endPlay?.(false),
+    };
+    const fallback = { speak: async (text) => { log.push(`browser ${text}`); return true; }, cancel() {} };
+    return { speaker: createClipSpeaker({ source, player, fallback }), log, end: (ok = true) => endPlay(ok) };
+}
+
+await testAsync('plays a sentence at a time, fetching the next while one plays', async () => {
+    const { speaker, log, end } = clipSpeakerWith();
+    const done = speaker.speak('One. Two. Three.');
+    await tick();
+    assert.deepEqual(log.filter(l => !l.startsWith('drop')), ['clip One.', 'clip Two.', 'play One.']);
+    assert.equal(speaker.position(), 0);
+    end();
+    await tick();
+    assert.equal(speaker.position(), 1);
+    end();
+    await tick();
+    end();
+    assert.equal(await done, true);
+    assert.equal(speaker.position(), 3);
+});
+
+await testAsync('a sentence with no clip is read by the browser voice instead', async () => {
+    const { speaker, log, end } = clipSpeakerWith({ missing: ['Two.'] });
+    const done = speaker.speak('One. Two.');
+    await tick();
+    end();
+    assert.equal(await done, true);
+    assert.deepEqual(log.filter(l => /^(play|browser)/.test(l)), ['play One.', 'browser Two.']);
+});
+
+await testAsync('a clip that fails to play is read by the browser voice too', async () => {
+    const { speaker, log, end } = clipSpeakerWith();
+    const done = speaker.speak('One.');
+    await tick();
+    end(false);
+    assert.equal(await done, true);
+    assert.deepEqual(log.filter(l => /^(play|browser)/.test(l)), ['play One.', 'browser One.']);
+});
+
+await testAsync('cancel stops at once and keeps the place for a resume', async () => {
+    const { speaker, log, end } = clipSpeakerWith();
+    const done = speaker.speak('One. Two. Three.');
+    await tick();
+    end();
+    await tick();
+    assert.equal(speaker.position(), 1);
+    speaker.cancel();
+    assert.equal(await done, false);
+    assert.equal(speaker.position(), 1);
+    assert.ok(!log.includes('browser Two.'));
+    log.length = 0;
+    speaker.speak('One. Two. Three.', { from: speaker.position() });
+    await tick();
+    assert.ok(log.includes('play Two.'));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
