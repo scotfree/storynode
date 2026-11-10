@@ -9,7 +9,7 @@ import { pageScript, choicesScript, numberWord, retryScript, HELP_SCRIPT } from 
 import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
 import { createClipSpeaker } from '../src/clipspeaker.js';
-import { createModelVoice, modelNote, loadProgress } from '../src/modelvoice.js';
+import { createModelVoice, modelNote, loadProgress, clipStats, timingNote } from '../src/modelvoice.js';
 import { createStory, listStories, overviewOf } from '../src/library.js';
 import { startCompose, composeStep, composePrompt, composeHints, composedText, tidyTitle, tidyChunk } from '../src/compose.js';
 
@@ -731,6 +731,8 @@ section('model voice');
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
+const LOUD = new Float32Array([0, 0.5, -0.4, 0]);
+
 // A stand-in for the model's worker: records what it's sent, and the test
 // answers by hand.
 function fakeWorker() {
@@ -766,12 +768,12 @@ await testAsync('loads a size, reports progress, then makes clips one at a time'
     const two = model.clip('Two.');
     assert.equal(w().speaks().length, 1);                   // the second waits its turn
     assert.deepEqual(w().speaks()[0], { type: 'speak', id: 1, text: 'One.', voice: 'af_heart', speed: 1.2 });
-    w().reply({ type: 'audio', id: 1, samples: 'A', sampleRate: 24000 });
-    assert.deepEqual(await one, { samples: 'A', sampleRate: 24000 });
+    w().reply({ type: 'audio', id: 1, samples: LOUD, sampleRate: 24000 });
+    assert.deepEqual(await one, { samples: LOUD, sampleRate: 24000 });
     w().reply({ type: 'failed', id: 2, message: 'no' });
     assert.equal(await two, null);
     // Asked again: from the cache, without the worker.
-    assert.deepEqual(await model.clip('One.', { rate: 1.2 }), { samples: 'A', sampleRate: 24000 });
+    assert.deepEqual(await model.clip('One.', { rate: 1.2 }), { samples: LOUD, sampleRate: 24000 });
     assert.equal(w().speaks().length, 2);
 });
 
@@ -786,8 +788,8 @@ await testAsync('drop() lets go of waiting sentences but keeps the one in progre
     model.drop();
     assert.equal(await one, null);
     assert.equal(await two, null);
-    w().reply({ type: 'audio', id: 1, samples: 'A', sampleRate: 24000 });
-    assert.deepEqual(await model.clip('One.'), { samples: 'A', sampleRate: 24000 });   // kept for a Repeat
+    w().reply({ type: 'audio', id: 1, samples: LOUD, sampleRate: 24000 });
+    assert.deepEqual(await model.clip('One.'), { samples: LOUD, sampleRate: 24000 });   // kept for a Repeat
     assert.equal(w().speaks().length, 1);                   // "Two." was never sent
 });
 
@@ -810,6 +812,71 @@ await testAsync('changing size or switching off ends the old worker; errors fall
     assert.equal(modelNote(model.state()), '');
 });
 
+await testAsync('times each sentence, and treats silence or not-numbers as a failure', async () => {
+    assert.deepEqual(clipStats({ samples: new Float32Array(24000).fill(0.25), sampleRate: 24000 }), { seconds: 1, peak: 0.25, ok: true });
+    assert.equal(clipStats({ samples: new Float32Array(100), sampleRate: 24000 }).ok, false);
+    assert.equal(clipStats({ samples: new Float32Array([0.5, NaN]), sampleRate: 24000 }).ok, false);
+    assert.equal(timingNote(2.3, 6.6), '2.3 s of audio in 6.6 s (2.9× slower than it plays)');
+    assert.match(timingNote(3, 1), /faster than it plays/);
+
+    let clock = 0;
+    const made = [];
+    const workers = [];
+    const model = createModelVoice({
+        makeWorker: () => { workers.push(fakeWorker()); return workers.at(-1); },
+        onClip: (c) => made.push(c),
+        now: () => clock,
+    });
+    model.load('small');
+    workers[0].reply({ type: 'ready', device: 'wasm' });
+    const good = model.clip('Good.');
+    clock = 4000;
+    workers[0].reply({ type: 'audio', id: 1, samples: new Float32Array(48000).fill(0.3), sampleRate: 24000 });
+    assert.ok(await good);
+    assert.equal(made[0].took, 4);
+    assert.equal(made[0].seconds, 2);
+    assert.equal(made[0].ok, true);
+    const silent = model.clip('Silent.');
+    workers[0].reply({ type: 'audio', id: 2, samples: new Float32Array(100), sampleRate: 24000 });
+    assert.equal(await silent, null);                       // the browser voice reads it instead
+    assert.match(made[1].error, /silent/);
+});
+
+await testAsync('warm() makes clips ahead, behind real requests, and drop() forgets them', async () => {
+    const { model, w } = modelWith();
+    model.load('small');
+    w().reply({ type: 'ready', device: 'wasm' });
+    model.warm(['A.', 'B.', 'C.']);
+    assert.equal(w().speaks().length, 1);
+    w().reply({ type: 'audio', id: 1, samples: LOUD, sampleRate: 24000 });
+    assert.equal(w().speaks().at(-1).text, 'B.');
+    model.drop();
+    w().reply({ type: 'audio', id: 2, samples: LOUD, sampleRate: 24000 });
+    assert.equal(w().speaks().length, 2);                   // "C." was forgotten
+    assert.ok(await model.clip('A.'));                      // already made
+    assert.ok(await model.clip('B.'));
+    assert.equal(w().speaks().length, 2);
+});
+
+await testAsync('says when it is waiting for a clip and when one is playing', async () => {
+    const states = [];
+    let endPlay = null;
+    const speaker = createClipSpeaker({
+        source: { clip: async (text) => text, drop() {} },
+        player: { unlock() {}, play: () => new Promise((resolve) => { endPlay = resolve; }), stop() {} },
+        fallback: { speak: async () => true, cancel() {} },
+        onState: (s) => states.push(s),
+    });
+    const done = speaker.speak('One. Two.');
+    await tick();
+    assert.deepEqual(states, ['waiting', 'playing']);
+    endPlay(true);
+    await tick();
+    endPlay(true);
+    await done;
+    assert.deepEqual(states, ['waiting', 'playing', 'waiting', 'playing']);
+});
+
 // A clip speaker over fakes: clips are just their sentence, and the test says
 // when each one finishes playing.
 function clipSpeakerWith({ missing = [] } = {}) {
@@ -828,11 +895,11 @@ function clipSpeakerWith({ missing = [] } = {}) {
     return { speaker: createClipSpeaker({ source, player, fallback }), log, end: (ok = true) => endPlay(ok) };
 }
 
-await testAsync('plays a sentence at a time, fetching the next while one plays', async () => {
+await testAsync('plays a sentence at a time, asking for every clip up front', async () => {
     const { speaker, log, end } = clipSpeakerWith();
     const done = speaker.speak('One. Two. Three.');
     await tick();
-    assert.deepEqual(log.filter(l => !l.startsWith('drop')), ['clip One.', 'clip Two.', 'play One.']);
+    assert.deepEqual(log.filter(l => !l.startsWith('drop')), ['clip One.', 'clip Two.', 'clip Three.', 'play One.']);
     assert.equal(speaker.position(), 0);
     end();
     await tick();

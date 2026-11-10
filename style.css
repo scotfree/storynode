@@ -671,6 +671,11 @@ button:disabled {
     accent-color: var(--accent);
 }
 
+#model-test {
+    padding: 0.35rem 0.8rem;
+    font-size: 0.9rem;
+}
+
 .model-status .hint {
     margin: 0.25rem 0 0.5rem;
 }

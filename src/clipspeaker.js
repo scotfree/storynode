@@ -13,7 +13,9 @@
 
 import { sentences } from './speech.js';
 
-export function createClipSpeaker({ source, player, fallback }) {
+// onState('waiting' | 'playing') says whether it's quiet because a clip is
+// still being made, or because one is playing.
+export function createClipSpeaker({ source, player, fallback, onState = () => {} }) {
     let token = 0;
     let position = 0;
     let rate = 1;
@@ -33,18 +35,20 @@ export function createClipSpeaker({ source, player, fallback }) {
         position: () => position,
 
         // Resolves true when done, false if cancelled. One sentence at a
-        // time; the next one's clip is fetched while this one plays.
+        // time. Every clip is asked for up front, so a source that makes
+        // them slowly works through the rest while the first ones play.
         async speak(text, { from = 0 } = {}) {
             const mine = ++token;
             stopAll();
             position = from;
             const parts = sentences(text).slice(from);
-            let next = parts.length ? source.clip(parts[0], { rate }) : null;
+            const clips = parts.map(part => source.clip(part, { rate }));
             for (let i = 0; i < parts.length; i++) {
-                const clip = await next;
+                onState('waiting');
+                const clip = await clips[i];
                 if (mine !== token) return false;
-                next = i + 1 < parts.length ? source.clip(parts[i + 1], { rate }) : null;
                 position = from + i;
+                onState('playing');
                 let ok = clip ? await player.play(clip) : false;
                 if (mine !== token) return false;
                 if (!ok) ok = await fallback.speak(parts[i]);

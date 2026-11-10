@@ -75,4 +75,10 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   speaker. The model voice is opt-in and the only exception to "no dependencies": nothing
   from outside is loaded unless it's switched on. Speed goes to the model as its own
   `speed`, not as playback rate, so pitch stays put.
+- The small model on WASM makes speech about 2.5× slower than it plays (measured in
+  headless Chromium; the audio itself is fine). So every sentence of a reading is queued
+  up front, the openings of each choice's page are made while waiting for an answer, a
+  silent or non-finite clip counts as a failure, and each clip's timing goes in the voice
+  log. Cross-origin isolation (threads) was measured at only ~25% faster, so it wasn't
+  worth a service-worker shim on a static host.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

@@ -6,12 +6,12 @@
 import { loadStory, choicesOf, isEnding, addNode, editNode, idFor } from './story.js';
 import { layoutGraph } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
-import { createSpeaker, listenOnce, support, rankVoices } from './speech.js';
+import { createSpeaker, listenOnce, support, rankVoices, sentences } from './speech.js';
 import { pageScript, choicesScript, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
 import { createSweep } from './arc.js';
 import { createClipSpeaker } from './clipspeaker.js';
-import { createModelVoice, modelNote, loadProgress, MODEL_SIZES, MODEL_VOICES } from './modelvoice.js';
+import { createModelVoice, modelNote, loadProgress, timingNote, MODEL_SIZES, MODEL_VOICES } from './modelvoice.js';
 import { createPlayer } from './player.js';
 import { createStory, listStories, overviewOf, NEW_STORY_LABEL } from './library.js';
 import { startCompose, composeStep, composePrompt, composeStatus, composeHints, composedText } from './compose.js';
@@ -45,9 +45,17 @@ const browserSpeaker = createSpeaker();
 const modelVoice = createModelVoice({
     makeWorker: () => new Worker(new URL('./model-worker.js', import.meta.url), { type: 'module' }),
     onChange: (state) => showModelState(state),
+    // Every sentence the model makes goes in the voice log, with how long it took.
+    onClip: ({ text, seconds, took, peak, ok, error }) => addLog(ok ? 'model' : 'error',
+        ok ? `${timingNote(seconds, took)}, peak ${peak.toFixed(2)}: “${text}”` : `model: ${error} after ${took.toFixed(1)} s: “${text}”`),
 });
 const player = createPlayer();
-const modelSpeaker = createClipSpeaker({ source: modelVoice, player, fallback: browserSpeaker });
+const modelSpeaker = createClipSpeaker({
+    source: modelVoice,
+    player,
+    fallback: browserSpeaker,
+    onState: (state) => showMakingVoice(state === 'waiting'),
+});
 let speaker = browserSpeaker;
 const can = support();
 
@@ -355,8 +363,32 @@ async function say(text, run, from = 0) {
     return done && run === voice.run;
 }
 
+// While the model is still making a sentence the page is silent, so say why.
+const MAKING = 'Making the voice…';
+let statusBeforeMaking = '';
+
+function showMakingVoice(making) {
+    const status = $('voice-status');
+    if (making && voice.state === 'reading') {
+        if (status.textContent !== MAKING) statusBeforeMaking = status.textContent;
+        status.textContent = MAKING;
+    } else if (!making && status.textContent === MAKING) {
+        status.textContent = statusBeforeMaking;
+    }
+}
+
+// The model is slow, so while the listener decides, it gets a start on what
+// each choice would read first: all the titles, then the opening sentences.
+function warmChoices() {
+    if (speaker !== modelSpeaker || voice.compose) return;
+    const openings = choices().map(c => sentences(pageScript(c)).slice(0, 3));
+    const rate = Number($('voice-rate').value);
+    for (let i = 0; i < 3; i++) modelVoice.warm(openings.map(o => o[i]).filter(Boolean), { rate });
+}
+
 // After speaking: hands-free opens the mic, Hold To Talk waits for a press.
 function awaitAnswer(run) {
+    warmChoices();
     if (handsFree()) listen(run);
     else setVoiceState('idle', voice.compose ? `${composeStatus(voice.compose.state)} Hold the button to answer.` : 'Hold the button to answer.');
 }
@@ -774,6 +806,8 @@ function showModelState(state) {
     }
     const bar = $('model-progress');
     bar.hidden = state.status !== 'loading';
+    $('model-test').hidden = state.status !== 'ready';
+    if (state.status !== 'ready') $('model-test-note').textContent = '';
     const { total, fraction } = loadProgress(state.files);
     // No number yet, or downloaded and starting up: the bar just shows it's busy.
     if (total === 0 || fraction >= 1) bar.removeAttribute('value');
@@ -783,6 +817,34 @@ function showModelState(state) {
     shownModelStatus = state.status;
     if (state.status === 'failed') addLog('error', `model: ${state.error}`);
     if (state.status === 'ready') addLog('mic', `model ready: ${state.size}, ${state.device}`);
+}
+
+// Makes one sentence with the model and plays it, saying how each step went.
+let testCount = 0;
+
+async function testModelVoice() {
+    const note = (text) => { $('model-test-note').textContent = text; };
+    stopVoice();
+    setVoiceState('idle', voice.started ? '' : startHint());
+    player.unlock();            // this tap allows audio
+    if (modelVoice.state().status !== 'ready') {
+        note("The model isn't ready yet.");
+        return;
+    }
+    note('Making a test sentence…');
+    const startedAt = performance.now();
+    const clip = await modelVoice.clip(`This is test ${++testCount} of the model voice.`, { rate: Number($('voice-rate').value) });
+    const took = (performance.now() - startedAt) / 1000;
+    if (!clip) {
+        note(`The model couldn't make audio (${took.toFixed(1)} s). The voice log says why.`);
+        return;
+    }
+    const made = `Made ${timingNote(clip.samples.length / clip.sampleRate, took)}.`;
+    note(`${made} Playing it…`);
+    const played = await player.play(clip);
+    note(played
+        ? `${made} Played it. If you heard nothing, check the volume, and on an iPhone the silent switch.`
+        : `${made} But it couldn't be played: audio here is “${player.state()}”.`);
 }
 
 // Switches between the browser voice and a model. The model starts loading
@@ -843,13 +905,16 @@ function setUpVoiceSettings() {
         // Stops any reading, and keeps the place so START can pick it up.
         const place = placeNow();
         stopVoice();
-        voice.resume = place;
+        // Waiting for an answer? Then START reads the choices again, to hear the new voice.
+        voice.resume = place.stage === 'answer' ? { ...place, stage: 'choices', sentence: 0 } : place;
         player.unlock();        // the tap on the switch is what allows audio
         useEngine(engine());
         save();
         addLog('mic', `voice: ${engine()}`);
         setVoiceState('idle', voice.started ? '' : startHint());
     });
+
+    $('model-test').addEventListener('click', testModelVoice);
 
     $('voice-support').textContent = [
         can.speak ? 'Reading aloud: yes.' : "Reading aloud: this browser can't.",

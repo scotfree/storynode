@@ -67,10 +67,15 @@ Editing a story's first page renames the story if it was named after that page.
 from Browser to Model: Small or Model: Large. The model is
 [Kokoro](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX), a neural
 voice that runs in the page: nothing is sent anywhere and there's no key or
-cost, but it's a big download the first time (roughly 90 MB for Small, 330 MB
+cost, but it's a big download the first time (roughly 90 MB for Small, 310 MB
 for Large), shown on a progress bar and then kept by the browser. Small runs on
 the processor; Large wants a browser with WebGPU. The browser voice reads while
-the model loads, and takes over for any sentence the model can't do. This is
+the model loads, and takes over for any sentence the model can't do. On the processor it makes speech slower than it plays (about 2.5 times slower
+on a test machine), so expect pauses: the status says "Making the voice…"
+while it works, it uses the time you spend listening and deciding to get ahead,
+and anything already made is kept for a Repeat. "Test the voice" under the
+switch makes and plays one sentence and says how long it took; the voice log
+has the same timing for every sentence. This is
 the one feature that fetches code and data from outside this folder (jsDelivr
 and Hugging Face).
 

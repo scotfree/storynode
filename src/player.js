@@ -56,6 +56,9 @@ export function createPlayer({ AudioContextClass = globalThis.AudioContext || gl
             });
         },
 
+        // 'running' once a tap has allowed audio; 'suspended' or 'none' before.
+        state: () => context?.state ?? 'none',
+
         stop() {
             const mine = playing;
             if (!mine) return;

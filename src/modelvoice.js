@@ -10,7 +10,7 @@
 // the full-precision one, for the GPU where the browser has WebGPU.
 export const MODEL_SIZES = {
     small: { label: 'Small', dtype: 'q8', device: 'wasm', megabytes: 90 },
-    large: { label: 'Large', dtype: 'fp32', device: 'webgpu', megabytes: 330 },
+    large: { label: 'Large', dtype: 'fp32', device: 'webgpu', megabytes: 310 },
 };
 
 // The better-rated English voices (a = American, b = British; f/m).
@@ -26,7 +26,29 @@ export const MODEL_VOICES = [
     { id: 'bm_fable', name: 'Fable (UK, male)' },
 ];
 
-const CACHE_SIZE = 40;      // clips kept, so Repeat doesn't generate again
+const CACHE_SIZE = 80;      // clips kept, so Repeat doesn't generate again
+const SILENT_PEAK = 0.001;  // a clip quieter than this is a failed one
+
+// What a clip holds: how long it plays, and how loud it gets (0 to 1).
+// A broken model gives silence or not-numbers, which is `ok: false`.
+export function clipStats({ samples, sampleRate }) {
+    let peak = 0;
+    let bad = 0;
+    for (let i = 0; i < samples.length; i++) {
+        const v = Math.abs(samples[i]);
+        if (!Number.isFinite(v)) bad++;
+        else if (v > peak) peak = v;
+    }
+    return { seconds: samples.length / sampleRate, peak, ok: bad === 0 && peak >= SILENT_PEAK };
+}
+
+// "2.3 s of audio in 6.6 s (2.9× slower than it plays)"
+export function timingNote(seconds, took) {
+    const base = `${seconds.toFixed(1)} s of audio in ${took.toFixed(1)} s`;
+    if (seconds <= 0 || took <= 0) return base;
+    const ratio = took / seconds;
+    return ratio > 1.1 ? `${base} (${ratio.toFixed(1)}× slower than it plays)` : `${base} (faster than it plays)`;
+}
 
 // How far along a download is, from per-file { loaded, total } counts.
 export function loadProgress(files) {
@@ -57,7 +79,8 @@ export function modelNote(state) {
 // makeWorker() → a Worker-like { postMessage, terminate, onmessage, onerror }.
 // onChange(state) is called whenever the state changes:
 //   { status: 'off' | 'loading' | 'ready' | 'failed', size, files, device, error }
-export function createModelVoice({ makeWorker, onChange = () => {} }) {
+// onClip({ text, seconds, took, peak, ok, error }) after each sentence is made.
+export function createModelVoice({ makeWorker, onChange = () => {}, onClip = () => {}, now = () => Date.now() }) {
     let worker = null;
     let state = { status: 'off', size: null, files: {}, device: null, error: null };
     let voice = MODEL_VOICES[0].id;
@@ -76,6 +99,7 @@ export function createModelVoice({ makeWorker, onChange = () => {} }) {
     const pump = () => {
         if (current || queue.length === 0 || state.status !== 'ready') return;
         current = queue.shift();
+        current.sentAt = now();
         worker.postMessage({ type: 'speak', id: current.id, text: current.text, voice: current.voice, speed: current.speed });
     };
 
@@ -90,7 +114,15 @@ export function createModelVoice({ makeWorker, onChange = () => {} }) {
         } else if ((msg.type === 'audio' || msg.type === 'failed') && current?.id === msg.id) {
             const done = current;
             current = null;
-            const clip = msg.type === 'audio' ? { samples: msg.samples, sampleRate: msg.sampleRate } : null;
+            let clip = msg.type === 'audio' ? { samples: msg.samples, sampleRate: msg.sampleRate } : null;
+            const took = (now() - done.sentAt) / 1000;
+            if (clip) {
+                const stats = clipStats(clip);
+                onClip({ text: done.text, took, ...stats, error: stats.ok ? null : 'the audio came out silent' });
+                if (!stats.ok) clip = null;
+            } else {
+                onClip({ text: done.text, took, seconds: 0, peak: 0, ok: false, error: msg.message ?? 'failed' });
+            }
             if (clip) {
                 cache.set(done.key, clip);
                 if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value);
@@ -152,6 +184,12 @@ export function createModelVoice({ makeWorker, onChange = () => {} }) {
                 queue.push({ id: ++nextId, key, text, voice, speed, waiters: [resolve] });
                 pump();
             });
+        },
+
+        // Makes clips ahead of need, for sentences likely to be wanted soon.
+        // They wait behind anything asked for properly, and drop() forgets them.
+        warm(texts, { rate = 1 } = {}) {
+            for (const text of texts) this.clip(text, { rate });
         },
 
         // Nobody's waiting any more. The sentence being generated can't be
