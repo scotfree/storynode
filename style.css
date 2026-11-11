@@ -13,8 +13,9 @@
     --node: #fffaf0;
     --node-current: #f3d9b8;
     --node-visited: #efe6d6;
-    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    /* The story is set like print; everything you operate is plain sans. */
+    --serif: "Times New Roman", Times, "Nimbus Roman", "Liberation Serif", serif;
+    --sans: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -90,22 +91,58 @@ button:disabled {
     z-index: 5;
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.6rem 1rem;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
     background: var(--bg);
     border-bottom: 1px solid var(--line);
 }
 
 .brand {
-    font-family: var(--serif);
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex: none;
     font-weight: 700;
-    font-size: 1.1rem;
+    font-size: 1.05rem;
+    letter-spacing: -0.01em;
+}
+
+.brand img {
+    display: block;
+}
+
+/* The story's title, set as a title. It's a real select underneath. */
+.story-select {
+    flex: 0 1 auto;
+    min-width: 3rem;
+    max-width: 26rem;
+    margin-right: auto;
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: var(--serif);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--ink);
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239c4a1a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 0.15rem center / 0.6rem;
+    border: none;
+    border-left: 1px solid var(--line);
+    border-radius: 0;
+    padding: 0.2rem 1.1rem 0.2rem 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.story-select option {
+    font-family: var(--sans);
+    font-weight: 400;
 }
 
 .tabs {
     display: flex;
+    flex: none;
     gap: 0.25rem;
-    margin-left: auto;
 }
 
 .tabs a {
@@ -119,30 +156,6 @@ button:disabled {
     background: var(--surface);
     color: var(--ink);
     border: 1px solid var(--line);
-}
-
-.story-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.4rem 1rem;
-    border-bottom: 1px solid var(--line);
-    font-size: 0.9rem;
-    color: var(--muted);
-}
-
-.story-bar select {
-    flex: 1;
-    min-width: 0;
-    max-width: 24rem;
-    font: inherit;
-    font-family: var(--serif);
-    font-size: 1rem;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 0.35rem 0.5rem;
 }
 
 .story-overview {
@@ -161,15 +174,10 @@ button:disabled {
 .view {
     max-width: 960px;
     margin: 0 auto;
-    padding: 1rem;
+    padding: 0.5rem 1rem 1rem;
 }
 
 /* --- Map --- */
-
-.story-title {
-    font-family: var(--serif);
-    margin: 0.5rem 0 0;
-}
 
 .map-scroll {
     overflow: auto;
@@ -178,50 +186,50 @@ button:disabled {
     background: var(--surface);
 }
 
-#map .edge {
+#map-svg .edge {
     fill: none;
     stroke: var(--muted);
     stroke-width: 1.5;
 }
 
-#map .node rect {
+#map-svg .node rect {
     fill: var(--node);
     stroke: var(--line);
     stroke-width: 1.5;
     rx: 10px;
 }
 
-#map .node.visited rect {
+#map-svg .node.visited rect {
     fill: var(--node-visited);
 }
 
-#map .node.current rect {
+#map-svg .node.current rect {
     fill: var(--node-current);
     stroke: var(--accent);
     stroke-width: 2.5;
 }
 
-#map .node.ending rect {
+#map-svg .node.ending rect {
     stroke-dasharray: 4 3;
 }
 
-#map .node text {
+#map-svg .node text {
     fill: var(--ink);
-    font-size: 13px;
-    font-family: var(--sans);
+    font-size: 14px;
+    font-family: var(--serif);
     pointer-events: none;
 }
 
-#map .node {
+#map-svg .node {
     cursor: pointer;
 }
 
-#map .node:hover rect,
-#map .node:focus rect {
+#map-svg .node:hover rect,
+#map-svg .node:focus rect {
     stroke: var(--accent);
 }
 
-#map .arrow {
+#map-svg .arrow {
     fill: var(--muted);
 }
 
@@ -230,27 +238,29 @@ button:disabled {
 .page {
     max-width: 38rem;
     margin: 0 auto;
-    padding: 1rem 0 3rem;
+    padding: 0 0 3rem;
 }
 
 .page h1 {
     font-family: var(--serif);
-    font-size: 1.8rem;
-    line-height: 1.2;
+    font-size: 1.9rem;
+    line-height: 1.15;
+    margin: 0.25rem 0 0.5rem;
 }
 
 .story-text p {
     font-family: var(--serif);
-    font-size: 1.15rem;
-    line-height: 1.65;
+    font-size: 1.25rem;
+    line-height: 1.55;
+    margin: 0 0 0.9em;
 }
 
 .choices {
     list-style: none;
     padding: 0;
-    margin: 2rem 0;
+    margin: 1.25rem 0 2rem;
     display: grid;
-    gap: 0.6rem;
+    gap: 0.5rem;
 }
 
 .choices button {
@@ -259,9 +269,9 @@ button:disabled {
     background: var(--surface);
     color: var(--ink);
     border: 1px solid var(--line);
-    padding: 0.8rem 1rem;
+    padding: 0.7rem 1rem;
     font-family: var(--serif);
-    font-size: 1.05rem;
+    font-size: 1.15rem;
 }
 
 .choices button:hover {
@@ -294,6 +304,7 @@ button:disabled {
     color: var(--accent);
     font-size: 0.9rem;
     text-decoration: underline;
+    text-transform: lowercase;
 }
 
 .add-form h2 {
@@ -335,20 +346,21 @@ button:disabled {
 /* --- Voice: made for a phone --- */
 
 .voice {
-    min-height: calc(100dvh - 6.5rem);
+    min-height: calc(100dvh - 3.5rem);
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
     padding-bottom: 5rem;   /* room for the fixed panel */
 }
 
 .voice-title {
     font-family: var(--serif);
-    font-size: 1.4rem;
-    margin: 1rem 0 0.5rem;
-    min-height: 1.7em;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.15;
+    margin: 0;
 }
 
 /* Registered so the arc buttons can animate back along their circle. */
@@ -359,14 +371,17 @@ button:disabled {
 }
 
 .talk-stage {
-    --talk: min(56vw, 300px);
+    --talk: min(42vw, 225px);
     --small: clamp(40px, 13vw, 56px);
     --orbit: calc(var(--talk) / 2 + 6px + var(--small) / 2);
-    --knob: 30px;
+    --knob: 22px;
     position: relative;
     flex: none;
     width: calc(2 * var(--orbit) + var(--small));
     height: calc(2 * var(--orbit) + var(--small));
+    /* The orbit's top is only used while an arc button is dragged round, so
+       the title and the choices sit closer than the full circle allows. */
+    margin: calc(var(--small) * -0.8) 0 calc(var(--small) * -0.45);
 }
 
 /* Each sits at the stage's center, then rides out along its angle --a. */
@@ -414,25 +429,39 @@ button:disabled {
     --a: 135deg;
 }
 
+/* The mode dial: a small label riding just inside the big button's rim. It
+   says the mode it's in; held, the other mode shows at the far side. */
 .mode-knob {
-    --r: calc(var(--talk) / 2 - var(--knob) / 2 - 8px);
-    width: var(--knob);
+    --r: calc(var(--talk) / 2 - var(--knob) / 2 - 7px);
     height: var(--knob);
+    padding: 0 0.55rem;
+    border-radius: 999px;
     background: var(--glow);
-    border: 2px solid var(--accent-ink);
-    box-shadow: 0 0 12px 4px var(--glow);
+    color: #2b2620;
+    border: 1.5px solid var(--accent-ink);
+    box-shadow: 0 0 10px 2px var(--glow);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    white-space: nowrap;
 }
 
-.voice-mode {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: calc(50% + var(--talk) / 2 + 3px);
-    margin: 0;
-    color: var(--muted);
-    font-size: 0.72rem;
-    letter-spacing: 0.03em;
+.mode-target {
+    display: flex;
+    align-items: center;
+    background: transparent;
+    color: var(--accent-ink);
+    border: 1.5px dashed var(--accent-ink);
+    box-shadow: none;
     pointer-events: none;
+    z-index: 1;
+}
+
+.talk.reading ~ .mode-target,
+.talk.busy ~ .mode-target {
+    color: var(--ink);
+    border-color: var(--ink);
 }
 
 .arc-guide {
@@ -475,7 +504,9 @@ button:disabled {
     width: var(--talk);
     height: var(--talk);
     border-radius: 50%;
-    font-size: 1.6rem;
+    padding: 0 0.6rem;
+    font-size: clamp(1rem, 5.2vw, 1.35rem);
+    line-height: 1.15;
     font-weight: 700;
     letter-spacing: 0.02em;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
@@ -493,7 +524,7 @@ button:disabled {
 
 .talk-sub {
     display: block;
-    font-size: 0.95rem;
+    font-size: 0.8rem;
     font-style: italic;
     font-weight: 400;
     letter-spacing: 0;
@@ -524,10 +555,23 @@ button:disabled {
     50% { box-shadow: 0 0 0 22px rgba(47, 111, 79, 0); }
 }
 
+/* What it's doing, and what it heard, in the strip at the bottom. */
+.voice-lines {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 0.1rem;
+}
+
 .voice-status {
-    font-size: 1.05rem;
-    min-height: 1.4em;
-    margin: 0.5rem 0 0;
+    font-size: 0.95rem;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.voice-status:empty,
+.voice-heard:empty {
+    display: none;
 }
 
 /* Live words and the last outcome. Tap for the log. */
@@ -551,8 +595,7 @@ button:disabled {
 }
 
 .voice-heard {
-    flex: 1;
-    min-width: 0;
+    font-size: 0.9rem;
     color: var(--muted);
     font-style: italic;
     overflow-wrap: anywhere;
@@ -581,7 +624,8 @@ button:disabled {
     background: transparent;
     color: var(--ink);
     border: 1px solid var(--line);
-    font-size: 0.95rem;
+    font-family: var(--serif);
+    font-size: 1.1rem;
     padding: 0.5rem 0.75rem;
 }
 
@@ -774,8 +818,29 @@ dialog::backdrop {
         padding: 0.5rem 0.75rem;
     }
 
-    .brand {
+    /* On a phone the logo stands for the name, and the title gets the room. */
+    .brand-name {
+        display: none;
+    }
+
+    .story-select {
+        flex: 1 1 auto;
         font-size: 1rem;
+        border-left: none;
+        padding-left: 0;
+    }
+
+    .tabs {
+        gap: 0;
+        font-size: 0.9rem;
+    }
+
+    .tabs a {
+        padding: 0.3rem 0.45rem;
+    }
+
+    #story-button {
+        padding: 0.2rem 0.5rem;
     }
 
     .page h1 {

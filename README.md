@@ -20,7 +20,7 @@ Open http://127.0.0.1:8000. The microphone needs a secure page: `127.0.0.1`
 and `localhost` count, but a phone on your network needs HTTPS (e.g. GitHub
 Pages).
 
-**Stories**: the dropdown under the top bar lists the stories and switches
+**Stories**: the story's title in the top bar is a dropdown that lists the stories and switches
 between them. Its last entry, "New story…", makes one the same way you add a
 node: a title and a short overview (the jacket cover), which become the story's
 first page. In Voice you can say "add new story" and dictate both. The ⋯ menu
@@ -35,11 +35,11 @@ Three modes, sharing your place in the story:
 - **Read**: a page of text with the choices as buttons.
 - **Voice**: one big button, made for a phone. Tap once and it reads the page
   and the choices. Then hold the button, say your answer, and let go. Holding
-  while it reads interrupts it. Drag the glowing knob on the button half way
-  around to switch to Hands Free, which opens the mic after each reading; there
+  while it reads interrupts it. Drag the glowing label on the button (it names the
+  mode it's in) half way around to switch to Hands Free, which opens the mic after each reading; there
   the button is START and STOP, and START picks up where you stopped. Drag
   Restart clockwise or Repeat counterclockwise around the button to confirm
-  them. The panel at the bottom shows what it hears; tap it for a log of how
+  them. The strip at the bottom shows what it's doing and what it hears; tap it for a log of how
   each answer was matched.
 
 **Adding a node**: under the choices in Read and Voice there's a small "Add new

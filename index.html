@@ -4,11 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StoryNode</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <header class="bar">
-        <span class="brand">StoryNode</span>
+        <span class="brand"><img src="favicon.svg" alt="" width="26" height="26"><span class="brand-name">StoryNode</span></span>
+        <!-- Which story: its title, which is also the menu to pick or make another. -->
+        <select id="story-select" class="story-select" aria-label="Story"></select>
         <nav class="tabs" aria-label="Mode">
             <a href="#map" data-mode="map">Map</a>
             <a href="#read" data-mode="read">Read</a>
@@ -17,18 +22,11 @@
         <button id="story-button" class="ghost" title="Story" aria-label="Story">⋯</button>
     </header>
 
-    <!-- Which story: pick one, or make a new one. -->
-    <div class="story-bar">
-        <label for="story-select">Story</label>
-        <select id="story-select"></select>
-    </div>
-
     <main>
         <!-- Map: the whole story's shape, titles only. -->
         <section id="map-view" class="view" hidden>
-            <h1 class="story-title" id="map-title"></h1>
             <p class="hint">Click a node to edit it, or to read from there.</p>
-            <div class="map-scroll"><svg id="map" role="img" aria-label="Story map"></svg></div>
+            <div class="map-scroll"><svg id="map-svg" role="img" aria-label="Story map"></svg></div>
         </section>
 
         <!-- Read: one page of the story, choices at the bottom. -->
@@ -54,13 +52,12 @@
             <p id="voice-title" class="voice-title"></p>
             <div id="talk-stage" class="talk-stage">
                 <button id="talk" class="talk" aria-live="polite">Hold To Talk</button>
-                <p id="voice-mode" class="voice-mode">Hold to Talk</p>
-                <button id="mode-knob" class="mode-knob" type="button" aria-label="Switch between Hold to Talk and Hands Free"></button>
+                <button id="mode-knob" class="mode-knob" type="button" aria-label="Switch between Hold to Talk and Hands Free: drag half way around"></button>
+                <span id="mode-target" class="mode-knob mode-target" aria-hidden="true" hidden></span>
                 <button id="restart-arc" class="arc-button" type="button" aria-label="Restart the story: drag clockwise">Restart</button>
                 <button id="repeat-arc" class="arc-button" type="button" aria-label="Repeat this page: drag counterclockwise">Repeat</button>
                 <svg id="arc-guide" class="arc-guide" aria-hidden="true" hidden></svg>
             </div>
-            <p id="voice-status" class="voice-status" aria-live="polite"></p>
             <ol id="voice-choices" class="voice-choices"></ol>
             <div class="page-links">
                 <button id="voice-add" class="add-link" type="button"></button>
@@ -95,7 +92,10 @@
                 <p id="voice-support" class="hint"></p>
             </details>
             <button id="voice-panel" class="voice-panel" type="button" aria-label="Open the voice log">
-                <span id="voice-heard" class="voice-heard" aria-live="polite"></span>
+                <span class="voice-lines">
+                    <span id="voice-status" class="voice-status" aria-live="polite"></span>
+                    <span id="voice-heard" class="voice-heard" aria-live="polite"></span>
+                </span>
                 <span class="voice-panel-hint">Log</span>
             </button>
         </section>

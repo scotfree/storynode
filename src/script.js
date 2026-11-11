@@ -3,9 +3,11 @@
 const NUMBERS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 export const numberWord = (n) => NUMBERS[n - 1] ?? String(n);
 
-// The page itself: title, then text.
-export function pageScript(node) {
-    return `${node.title}.\n${node.text}`;
+// The page itself: just its text. Its title was the choice that led here,
+// already heard, and reads oddly as an opening line. The story's first page
+// is the exception (`cover`): its title is the story's, and nobody chose it.
+export function pageScript(node, { cover = false } = {}) {
+    return cover ? `${node.title}.\n${node.text}` : node.text;
 }
 
 // "Choice one: Walk down to the beach. Choice two: … Which will it be?"

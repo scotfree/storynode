@@ -13,6 +13,7 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 
 ## Layout
 
+- `favicon.svg` (and two PNGs rendered from it): the logo, SN as nodes and edges.
 - `index.html`, `style.css`: the page. Modes switch on the URL hash (`#map`, `#read`, `#voice`).
 - `src/app.js`: UI and the voice loop (read page → read choices → listen → act). A `run`
   counter cancels stale async steps when the user taps or changes mode.
@@ -89,4 +90,11 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   the cloud voice for the same reason. It asks for raw `pcm` (24 kHz, 16-bit), which
   needs no decoding. A refused key or an empty account stops requests until the key
   changes; anything else costs one sentence, read by the browser voice.
+- Voice reads a page's text without its title: the title was the choice just made. Only
+  the story's first page reads its title, since nobody chose it.
+- Looks: story words (titles, text, choices, map nodes) are set in Times; everything you
+  operate is Helvetica/Arial. The story's title in the top bar is the story picker. On
+  the voice page the status line lives in the bottom strip with what was heard, the mode
+  dial carries its own label, and held it shows the other mode at the far side with two
+  arrows. The map's svg is `map-svg`, not `map`, or the `#map` hash scrolls to it.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

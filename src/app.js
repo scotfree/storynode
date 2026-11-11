@@ -26,6 +26,7 @@ const VOICE_KEY = 'storynode_voice';   // { name, rate, auto }
 const MAX_RETRIES = 2;
 const HOLD_MIN_MS = 250;       // a shorter press is a tap, not an answer
 const ARC_DEGREES = 180;       // how far the arc controls must be dragged
+const DIAL_ARROW_DEGREES = 128; // the dial's arrows stop short of the label they point at
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}, text) => {
@@ -218,9 +219,8 @@ function shorten(title, max = 24) {
 }
 
 function renderMap() {
-    $('map-title').textContent = story.title;
     const layout = layoutGraph(story);
-    const svg = $('map');
+    const svg = $('map-svg');    // not "map": the #map hash would scroll the page to it
     svg.setAttribute('viewBox', `0 0 ${layout.width} ${layout.height}`);
     svg.setAttribute('width', layout.width);
     svg.setAttribute('height', layout.height);
@@ -419,7 +419,7 @@ async function voiceLoop(run, { skipPage = false, from = null } = {}) {
     if (stage === 'page') {
         voice.stage = 'page';
         setVoiceState('reading', 'Reading…');
-        if (!(await say(pageScript(node()), run, from?.sentence ?? 0))) return;
+        if (!(await say(pageScript(node(), { cover: currentId === story.start }), run, from?.sentence ?? 0))) return;
     }
     if (stage === 'page' || stage === 'choices') {
         voice.stage = 'choices';
@@ -614,9 +614,11 @@ function onTalkTap() {
 }
 
 // The dial's position and the words above the button show the mode.
+const modeName = (free) => (free ? 'Hands Free' : 'Hold to Talk');
+
 function syncDial() {
     $('mode-knob').style.setProperty('--a', `${dialRest()}deg`);
-    $('voice-mode').textContent = handsFree() ? 'Hands Free' : 'Hold to Talk';
+    $('mode-knob').textContent = modeName(handsFree());
 }
 
 const dialRest = () => (handsFree() ? 180 : 0);
@@ -668,15 +670,15 @@ function showArcGuide(radius, rest, direction) {
     const marker = svgEl('marker', { id: 'arc-arrow', viewBox: '0 0 10 10', refX: 5, refY: 5, markerWidth: 4, markerHeight: 4, orient: 'auto' });
     marker.append(svgEl('path', { d: 'M0 0 L10 5 L0 10 z', class: 'arc-head' }));
     defs.append(marker);
-    // The dial can go either way, so it shows its whole circle.
-    const track = direction === 0
-        ? svgEl('circle', { class: 'arc-track', r: radius, cx: 0, cy: 0 })
-        : svgEl('path', { class: 'arc-track', d: arcPath(radius, rest, rest + direction * ARC_DEGREES), 'marker-end': 'url(#arc-arrow)' });
-    svg.replaceChildren(defs, track, svgEl('path', { id: 'arc-fill', class: 'arc-fill' }));
+    // The dial can go either way: two arrows, both ending just short of the
+    // far side, where the other mode's name is waiting.
+    const sweeps = direction === 0 ? [DIAL_ARROW_DEGREES, -DIAL_ARROW_DEGREES] : [direction * ARC_DEGREES];
+    const tracks = sweeps.map(sweep => svgEl('path', { class: 'arc-track', d: arcPath(radius, rest, rest + sweep), 'marker-end': 'url(#arc-arrow)' }));
+    svg.replaceChildren(defs, ...tracks, svgEl('path', { id: 'arc-fill', class: 'arc-fill' }));
     svg.removeAttribute('hidden');
 }
 
-function setUpArcControl({ element, rest, direction, fire, springBack = true }) {
+function setUpArcControl({ element, rest, direction, fire, springBack = true, onGrab = () => {}, onLetGo = () => {} }) {
     let tracker = null;
     let radius = 0;
     const setAngle = (degrees) => element.style.setProperty('--a', `${degrees}deg`);
@@ -684,6 +686,7 @@ function setUpArcControl({ element, rest, direction, fire, springBack = true }) 
     const release = ({ fired = false } = {}) => {
         tracker = null;
         $('arc-guide').setAttribute('hidden', '');
+        onLetGo();
         if (fired && !springBack) {
             setAngle(rest());           // already there: no animation
             void element.offsetWidth;   // apply it before transitions return
@@ -704,6 +707,7 @@ function setUpArcControl({ element, rest, direction, fire, springBack = true }) 
         element.setPointerCapture(e.pointerId);
         element.classList.add('dragging');
         showArcGuide(radius, rest(), direction);
+        onGrab();
     });
     element.addEventListener('pointermove', (e) => {
         if (!tracker) return;
@@ -730,7 +734,21 @@ function setUpArcControl({ element, rest, direction, fire, springBack = true }) 
 function setUpArcControls() {
     setUpArcControl({ element: $('restart-arc'), rest: () => 225, direction: 1, fire: restartStory });
     setUpArcControl({ element: $('repeat-arc'), rest: () => 135, direction: -1, fire: repeatNode });
-    setUpArcControl({ element: $('mode-knob'), rest: dialRest, direction: 0, fire: toggleHandsFree, springBack: false });
+    // Held, the dial shows where it can go: the other mode, at the far side.
+    const target = $('mode-target');
+    setUpArcControl({
+        element: $('mode-knob'),
+        rest: dialRest,
+        direction: 0,
+        fire: toggleHandsFree,
+        springBack: false,
+        onGrab: () => {
+            target.textContent = modeName(!handsFree());
+            target.style.setProperty('--a', `${dialRest() + 180}deg`);
+            target.hidden = false;
+        },
+        onLetGo: () => { target.hidden = true; },
+    });
 }
 
 const holdsApply = () => voice.started && !handsFree();

@@ -224,7 +224,8 @@ test('better voices in the right language come first', () => {
 });
 
 test('the spoken page and choices', () => {
-    assert.equal(pageScript({ title: 'The Cave', text: 'It is dark.' }), 'The Cave.\nIt is dark.');
+    assert.equal(pageScript({ title: 'The Cave', text: 'It is dark.' }), 'It is dark.');
+    assert.equal(pageScript({ title: 'The Cave', text: 'It is dark.' }, { cover: true }), 'The Cave.\nIt is dark.');
     assert.equal(choicesScript(choices), 'Choice one: Walk down to the beach.\nChoice two: Follow the forest path.\nChoice three: Climb to the castle.\nWhich will it be?');
     assert.match(choicesScript([]), /The end/);
     assert.match(choicesScript([choices[0]]), /one way on/);
