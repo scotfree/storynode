@@ -332,6 +332,43 @@ function setVoiceState(state, status = '') {
     $('voice-status').textContent = status;
     $('repeat-arc').disabled = !voice.started;
     $('restart-arc').disabled = !voice.started;
+    syncWakeLock();
+}
+
+// --- keeping the screen on ---
+//
+// A phone that dims and locks mid-page stops the reading. While a story is
+// going in voice mode the page asks the browser to keep the screen awake,
+// unless that's switched off. The browser drops the lock whenever the page
+// is hidden, so it is asked for again each time the page comes back.
+
+let wakeLock = null;
+let wakeLockAsking = false;
+
+const wantsAwake = () => $('keep-awake').checked && mode() === 'voice' && voice.started
+    && document.visibilityState === 'visible';
+
+async function syncWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    if (!wantsAwake()) {
+        const held = wakeLock;
+        wakeLock = null;
+        held?.release().catch(() => {});
+        return;
+    }
+    if (wakeLock || wakeLockAsking) return;
+    wakeLockAsking = true;
+    try {
+        const lock = await navigator.wakeLock.request('screen');
+        lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+        wakeLock = lock;
+        addLog('mic', 'screen: staying awake');
+    } catch (error) {
+        // Refused, for instance in Low Power Mode. Nothing else to try.
+        addLog('error', `screen: can't keep awake (${error.name})`);
+    }
+    wakeLockAsking = false;
+    if (!wantsAwake()) syncWakeLock();     // things changed while asking
 }
 
 function talkLabel(state) {
@@ -824,6 +861,7 @@ function saveVoiceSettings() {
         engine: engine(),
         modelVoice: $('model-voice-select').value,
         cloudVoice: $('cloud-voice-select').value,
+        awake: $('keep-awake').checked,
     });
 }
 
@@ -984,6 +1022,19 @@ function setUpVoiceSettings() {
     });
 
     $('model-test').addEventListener('click', testModelVoice);
+
+    const awake = $('keep-awake');
+    awake.checked = saved.awake ?? true;
+    if (!('wakeLock' in navigator)) {
+        awake.checked = false;
+        awake.disabled = true;
+        awake.parentElement.title = "This browser can't keep the screen awake.";
+    }
+    awake.addEventListener('change', () => {
+        save();
+        syncWakeLock();
+    });
+    document.addEventListener('visibilitychange', syncWakeLock);
 
     $('voice-support').textContent = [
         can.speak ? 'Reading aloud: yes.' : "Reading aloud: this browser can't.",

@@ -98,4 +98,7 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   the voice page the status line lives in the bottom strip with what was heard, the mode
   dial carries its own label, and held it shows the other mode at the far side with two
   arrows. The map's svg is `map-svg`, not `map`, or the `#map` hash scrolls to it.
+- A started story in voice mode holds a screen wake lock (the phone locking mid-page stops
+  the reading), re-asked whenever the page becomes visible again, and released on leaving
+  voice mode. On by default, with a switch in Voice settings.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

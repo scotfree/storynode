@@ -90,6 +90,11 @@ twice. Without a key, with a refused key, or offline, the browser voice reads.
 This suits one person with their own key; a public site would need a small
 server to hold the key instead.
 
+**Keeping the screen on**: once a story is going in Voice, the page asks the
+phone not to dim and lock, since that stops the reading. "Keep the screen
+awake" under Voice settings turns this off. It only applies while the Voice
+page is showing; the phone can still refuse (Low Power Mode, for one).
+
 Voice works in Chrome and Safari (Firefox can't listen). Better voices help a
 lot: on a Mac or iPhone, download an "Enhanced" or "Premium" voice in the
 system's accessibility settings, then pick it under Voice settings.
