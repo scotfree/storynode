@@ -92,8 +92,9 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   changes; anything else costs one sentence, read by the browser voice.
 - Voice reads a page's text without its title: the title was the choice just made. Only
   the story's first page reads its title, since nobody chose it.
-- Looks: story words (titles, text, choices, map nodes) are set in Times; everything you
-  operate is Helvetica/Arial. The story's title in the top bar is the story picker. On
+- Looks: story words (titles, text, choices, map nodes) are typewritten (American
+  Typewriter on Apple devices, Courier elsewhere; device fonts only, nothing downloaded),
+  sized for Courier's width; everything you operate is Helvetica/Arial. The story's title in the top bar is the story picker. On
   the voice page the status line lives in the bottom strip with what was heard, the mode
   dial carries its own label, and held it shows the other mode at the far side with two
   arrows. The map's svg is `map-svg`, not `map`, or the `#map` hash scrolls to it.

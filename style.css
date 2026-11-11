@@ -13,8 +13,9 @@
     --node: #fffaf0;
     --node-current: #f3d9b8;
     --node-visited: #efe6d6;
-    /* The story is set like print; everything you operate is plain sans. */
-    --serif: "Times New Roman", Times, "Nimbus Roman", "Liberation Serif", serif;
+    /* The story is typewritten; everything you operate is plain sans.
+       American Typewriter is on Apple devices, Courier nearly everywhere else. */
+    --serif: "American Typewriter", "Courier New", Courier, "Liberation Mono", monospace;
     --sans: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
 }
 
@@ -120,7 +121,7 @@ button:disabled {
     appearance: none;
     -webkit-appearance: none;
     font-family: var(--serif);
-    font-size: 1.2rem;
+    font-size: 1.05rem;
     font-weight: 700;
     color: var(--ink);
     background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239c4a1a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 0.15rem center / 0.6rem;
@@ -215,7 +216,7 @@ button:disabled {
 
 #map-svg .node text {
     fill: var(--ink);
-    font-size: 14px;
+    font-size: 12.5px;
     font-family: var(--serif);
     pointer-events: none;
 }
@@ -243,15 +244,15 @@ button:disabled {
 
 .page h1 {
     font-family: var(--serif);
-    font-size: 1.9rem;
-    line-height: 1.15;
-    margin: 0.25rem 0 0.5rem;
+    font-size: 1.6rem;
+    line-height: 1.2;
+    margin: 0.25rem 0 0.6rem;
 }
 
 .story-text p {
     font-family: var(--serif);
-    font-size: 1.25rem;
-    line-height: 1.55;
+    font-size: 1.08rem;
+    line-height: 1.6;
     margin: 0 0 0.9em;
 }
 
@@ -271,7 +272,7 @@ button:disabled {
     border: 1px solid var(--line);
     padding: 0.7rem 1rem;
     font-family: var(--serif);
-    font-size: 1.15rem;
+    font-size: 1.02rem;
 }
 
 .choices button:hover {
@@ -357,9 +358,9 @@ button:disabled {
 
 .voice-title {
     font-family: var(--serif);
-    font-size: 1.5rem;
+    font-size: 1.3rem;
     font-weight: 700;
-    line-height: 1.15;
+    line-height: 1.2;
     margin: 0;
 }
 
@@ -625,7 +626,7 @@ button:disabled {
     color: var(--ink);
     border: 1px solid var(--line);
     font-family: var(--serif);
-    font-size: 1.1rem;
+    font-size: 1rem;
     padding: 0.5rem 0.75rem;
 }
 
@@ -825,7 +826,7 @@ dialog::backdrop {
 
     .story-select {
         flex: 1 1 auto;
-        font-size: 1rem;
+        font-size: 0.9rem;
         border-left: none;
         padding-left: 0;
     }
@@ -844,6 +845,6 @@ dialog::backdrop {
     }
 
     .page h1 {
-        font-size: 1.5rem;
+        font-size: 1.35rem;
     }
 }

@@ -214,7 +214,8 @@ function render() {
 
 // --- map ---
 
-function shorten(title, max = 24) {
+// Typewriter letters are wide: 22 of them fill a map node.
+function shorten(title, max = 22) {
     return title.length > max ? `${title.slice(0, max - 1)}…` : title;
 }
 
