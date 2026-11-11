@@ -10,6 +10,7 @@ import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
 import { createClipSpeaker } from '../src/clipspeaker.js';
 import { createModelVoice, modelNote, loadProgress, clipStats, timingNote } from '../src/modelvoice.js';
+import { createCloudVoice, pcm16ToFloat32, costNote, cloudError, cloudNote, CLOUD } from '../src/cloudvoice.js';
 import { createStory, listStories, overviewOf } from '../src/library.js';
 import { startCompose, composeStep, composePrompt, composeHints, composedText, tidyTitle, tidyChunk } from '../src/compose.js';
 
@@ -944,6 +945,114 @@ await testAsync('cancel stops at once and keeps the place for a resume', async (
     speaker.speak('One. Two. Three.', { from: speaker.position() });
     await tick();
     assert.ok(log.includes('play Two.'));
+});
+
+section('cloud voice');
+
+// 16-bit samples as the service sends them.
+const pcm = (...values) => new Int16Array(values).buffer;
+
+// A stand-in for fetch: records requests; the test answers each by hand.
+function fakeFetch() {
+    const calls = [];
+    const fetch = (url, options) => new Promise((resolve) => {
+        calls.push({ url, headers: options.headers, body: JSON.parse(options.body), resolve });
+    });
+    const audio = (i, ...values) => calls[i].resolve({ ok: true, arrayBuffer: async () => pcm(...values) });
+    const refuse = (i, status, body) => calls[i].resolve({ ok: false, status, json: async () => body });
+    return { fetch, calls, audio, refuse };
+}
+
+test('turns 16-bit audio into floats, and counts the cost', () => {
+    assert.deepEqual([...pcm16ToFloat32(pcm(0, 16384, -32768))], [0, 0.5, -1]);
+    assert.equal(pcm16ToFloat32(new Uint8Array([0, 64, 7]).buffer).length, 1);     // a stray byte is dropped
+    assert.match(costNote(0), /Nothing sent/);
+    assert.match(costNote(300), /300 characters .* under a cent/);
+    assert.match(costNote(3866), /3,866 characters .* roughly \$0\.06/);
+});
+
+await testAsync('without a key the browser voice reads; with one, each sentence is sent', async () => {
+    const { fetch, calls, audio } = fakeFetch();
+    const states = [];
+    const cloud = createCloudVoice({ fetch, onChange: (s) => states.push(s) });
+    assert.equal(cloud.state().status, 'no-key');
+    assert.match(cloudNote(cloud.state()), /Paste an OpenAI API key/);
+    assert.equal(await cloud.clip('No key.'), null);
+    assert.equal(calls.length, 0);
+
+    cloud.setKey('  sk-test ');
+    assert.equal(cloud.state().status, 'ready');
+    const one = cloud.clip('One.', { rate: 1.2 });
+    assert.equal(calls[0].url, CLOUD.url);
+    assert.equal(calls[0].headers.Authorization, 'Bearer sk-test');
+    assert.deepEqual(calls[0].body, {
+        model: 'gpt-4o-mini-tts', voice: 'marin', input: 'One.', instructions: CLOUD.instructions, response_format: 'pcm', speed: 1.2,
+    });
+    audio(0, 0, 16384, -8000);
+    const clip = await one;
+    assert.equal(clip.sampleRate, 24000);
+    assert.equal(clip.samples[1], 0.5);
+    assert.equal(states.at(-1).characters, 4);
+    // Asked again: kept, not paid for twice. Normal speed sends no speed.
+    assert.equal(await cloud.clip('One.', { rate: 1.2 }), clip);
+    cloud.clip('Two.');
+    assert.equal(calls.length, 2);
+    assert.ok(!('speed' in calls[1].body));
+});
+
+await testAsync('sends a few at a time, and a cancelled page is not all paid for', async () => {
+    const { fetch, calls, audio } = fakeFetch();
+    const cloud = createCloudVoice({ fetch });
+    cloud.setKey('sk-test');
+    const clips = ['A.', 'B.', 'C.', 'D.', 'E.'].map(text => cloud.clip(text));
+    assert.equal(calls.length, 3);
+    cloud.drop();
+    assert.deepEqual(await Promise.all(clips), [null, null, null, null, null]);
+    audio(0, 9000);
+    audio(1, 9000);
+    audio(2, 9000);
+    await tick();
+    assert.equal(calls.length, 3);                  // D and E were never sent
+    assert.ok(await cloud.clip('A.'));              // what was sent is kept
+    assert.equal(cloud.state().characters, 6);
+});
+
+await testAsync('a refused key or an empty account stops it until the key changes', async () => {
+    const { fetch, calls, refuse, audio } = fakeFetch();
+    const made = [];
+    const cloud = createCloudVoice({ fetch, onClip: (c) => made.push(c) });
+    cloud.setKey('sk-bad');
+    const one = cloud.clip('One.');
+    refuse(0, 401, { error: { message: 'Incorrect API key provided' } });
+    assert.equal(await one, null);
+    assert.equal(cloud.state().status, 'failed');
+    assert.match(cloudNote(cloud.state()), /The key was refused \(Incorrect API key provided\)\. Using the browser voice\./);
+    assert.match(made[0].error, /refused/);
+    assert.equal(await cloud.clip('Two.'), null);
+    assert.equal(calls.length, 1);                  // not asked again
+    cloud.setKey('sk-good');
+    assert.equal(cloud.state().status, 'ready');
+    const again = cloud.clip('One.');
+    audio(1, 9000);
+    assert.ok(await again);
+
+    assert.equal(cloudError(429, { error: { code: 'insufficient_quota' } }).message, 'The account is out of credit');
+    assert.equal(cloudError(429, { error: { code: 'rate_limit_exceeded' } }).stop, false);
+    assert.equal(cloudError(500, null).stop, false);
+});
+
+await testAsync('a hiccup or silence loses one sentence, not the voice', async () => {
+    const calls = [];
+    const cloud = createCloudVoice({ fetch: async () => { calls.push(1); throw new Error('offline'); } });
+    cloud.setKey('sk-test');
+    assert.equal(await cloud.clip('One.'), null);
+    assert.equal(cloud.state().status, 'ready');
+    const quiet = fakeFetch();
+    const other = createCloudVoice({ fetch: quiet.fetch });
+    other.setKey('sk-test');
+    const clip = other.clip('One.');
+    quiet.audio(0, 0, 0, 0);
+    assert.equal(await clip, null);
 });
 
 section('editing a node');

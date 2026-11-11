@@ -73,15 +73,24 @@
                     <label><input type="radio" name="engine" value="browser" checked><span>Browser</span></label>
                     <label><input type="radio" name="engine" value="small"><span>Model: Small</span></label>
                     <label><input type="radio" name="engine" value="large"><span>Model: Large</span></label>
+                    <label><input type="radio" name="engine" value="cloud"><span>Cloud</span></label>
                 </fieldset>
                 <div id="model-status" class="model-status" hidden>
                     <progress id="model-progress" max="1" value="0"></progress>
                     <p id="model-note" class="hint" aria-live="polite"></p>
+                </div>
+                <div id="cloud-status" class="model-status" hidden>
+                    <label>OpenAI API key <input id="cloud-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></label>
+                    <p id="cloud-note" class="hint" aria-live="polite"></p>
+                    <p class="hint">The key stays in this browser and is sent only to OpenAI. Each sentence read costs a fraction of a cent on that account.</p>
+                </div>
+                <div id="voice-test" hidden>
                     <button id="model-test" class="ghost" type="button">Test the voice</button>
                     <p id="model-test-note" class="hint" aria-live="polite"></p>
                 </div>
                 <label id="browser-voice-row">Browser voice <select id="voice-select"></select></label>
                 <label id="model-voice-row" hidden>Model voice <select id="model-voice-select"></select></label>
+                <label id="cloud-voice-row" hidden>Cloud voice <select id="cloud-voice-select"></select></label>
                 <label>Speed <input type="range" id="voice-rate" min="0.7" max="1.4" step="0.05" value="1"></label>
                 <p id="voice-support" class="hint"></p>
             </details>

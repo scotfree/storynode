@@ -79,6 +79,17 @@ has the same timing for every sentence. This is
 the one feature that fetches code and data from outside this folder (jsDelivr
 and Hugging Face).
 
+**A cloud voice (experimental)**: the last stop on the Voice switch is Cloud,
+which sends each sentence to OpenAI's speech service (`gpt-4o-mini-tts`) and
+plays what comes back. It needs your own OpenAI API key, pasted under the
+switch: it's kept in that browser only and sent only to OpenAI. The cost is
+roughly 1.5 cents per thousand characters read, so a few cents for a story
+like the sample; the panel shows how much has been sent from that browser. A
+sentence already fetched is kept until the page is reloaded and isn't paid for
+twice. Without a key, with a refused key, or offline, the browser voice reads.
+This suits one person with their own key; a public site would need a small
+server to hold the key instead.
+
 Voice works in Chrome and Safari (Firefox can't listen). Better voices help a
 lot: on a Mac or iPhone, download an "Enhanced" or "Premium" voice in the
 system's accessibility settings, then pick it under Voice settings.

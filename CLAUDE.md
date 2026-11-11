@@ -32,6 +32,8 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   clips from a `source`, a sentence at a time, with the browser voice as fallback.
 - `src/modelvoice.js`, `src/model-worker.js`: the Kokoro model as a clip source. The worker
   imports kokoro-js from a CDN on demand; the main side queues sentences and caches clips.
+- `src/cloudvoice.js`: OpenAI's speech API as a clip source, called straight from the
+  browser with the listener's own key.
 - `src/player.js`: plays clips through Web Audio.
 - `src/library.js`: the list of stories (built-in plus this browser's) and `createStory`.
 - `src/compose.js`: the spoken conversation for dictating a new node or story (title → read back →
@@ -81,4 +83,10 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   silent or non-finite clip counts as a failure, and each clip's timing goes in the voice
   log. Cross-origin isolation (threads) was measured at only ~25% faster, so it wasn't
   worth a service-worker shim on a static host.
+- The cloud voice is bring-your-own-key because there's no server to hide one: the key
+  lives in localStorage (`storynode_cloud`) and never in the repo. Requests go three at a
+  time, so a page abandoned early isn't all paid for, and choices are not pre-made for
+  the cloud voice for the same reason. It asks for raw `pcm` (24 kHz, 16-bit), which
+  needs no decoding. A refused key or an empty account stops requests until the key
+  changes; anything else costs one sentence, read by the browser voice.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

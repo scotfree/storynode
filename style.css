@@ -609,8 +609,9 @@ button:disabled {
 /* The Voice switch: one of three, like a slider with stops. */
 .switch {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0;
+    gap: 0.4rem 0;
     margin: 0.75rem 0 0.5rem;
     padding: 0;
     border: none;
@@ -618,8 +619,14 @@ button:disabled {
 
 .switch legend {
     float: left;
-    margin-right: auto;
+    width: 100%;
+    margin-bottom: 0.4rem;
     padding: 0;
+}
+
+.voice-settings .switch label {
+    flex: 1;
+    text-align: center;
 }
 
 .voice-settings .switch label {
@@ -635,10 +642,10 @@ button:disabled {
 
 .switch span {
     display: block;
-    padding: 0.4rem 0.6rem;
+    padding: 0.4rem 0.3rem;
     border: 1px solid var(--line);
     margin-left: -1px;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--ink);
     background: var(--surface);
     cursor: pointer;
@@ -647,12 +654,10 @@ button:disabled {
 
 .switch label:first-of-type span {
     border-radius: 999px 0 0 999px;
-    padding-left: 0.8rem;
 }
 
 .switch label:last-of-type span {
     border-radius: 0 999px 999px 0;
-    padding-right: 0.8rem;
 }
 
 .switch input:checked + span {
@@ -669,6 +674,24 @@ button:disabled {
 .model-status progress {
     width: 100%;
     accent-color: var(--accent);
+}
+
+.voice-settings #cloud-status label {
+    display: grid;
+    gap: 0.3rem;
+    justify-content: stretch;
+}
+
+#cloud-key {
+    font: inherit;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.5rem 0.6rem;
+    min-width: 0;
 }
 
 #model-test {

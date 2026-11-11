@@ -13,6 +13,7 @@ import { createSweep } from './arc.js';
 import { createClipSpeaker } from './clipspeaker.js';
 import { createModelVoice, modelNote, loadProgress, timingNote, MODEL_SIZES, MODEL_VOICES } from './modelvoice.js';
 import { createPlayer } from './player.js';
+import { createCloudVoice, cloudNote, CLOUD_VOICES } from './cloudvoice.js';
 import { createStory, listStories, overviewOf, NEW_STORY_LABEL } from './library.js';
 import { startCompose, composeStep, composePrompt, composeStatus, composeHints, composedText } from './compose.js';
 
@@ -20,6 +21,7 @@ const STORIES_URL = 'stories/';         // index.json there names the built-in s
 const LIBRARY_KEY = 'storynode_library';   // { stories: { id: data }, current: id }
 const OLD_STORY_KEY = 'storynode_story';   // from before there were several
 const NEW_STORY = '+new';              // the dropdown's last option
+const CLOUD_KEY = 'storynode_cloud';   // { key, characters }: the listener's own API key, and how much it's been used
 const VOICE_KEY = 'storynode_voice';   // { name, rate, auto }
 const MAX_RETRIES = 2;
 const HOLD_MIN_MS = 250;       // a shorter press is a tap, not an answer
@@ -52,6 +54,19 @@ const modelVoice = createModelVoice({
 const player = createPlayer();
 const modelSpeaker = createClipSpeaker({
     source: modelVoice,
+    player,
+    fallback: browserSpeaker,
+    onState: (state) => showMakingVoice(state === 'waiting'),
+});
+// And a speech service, with the listener's own key. Same clip speaker, other source.
+const cloudVoice = createCloudVoice({
+    characters: readJson(CLOUD_KEY)?.characters ?? 0,
+    onChange: (state) => showCloudState(state),
+    onClip: ({ text, seconds, took, ok, error }) => addLog(ok ? 'cloud' : 'error',
+        ok ? `${seconds.toFixed(1)} s of audio in ${took.toFixed(1)} s: “${text}”` : `cloud: ${error}: “${text}”`),
+});
+const cloudSpeaker = createClipSpeaker({
+    source: cloudVoice,
     player,
     fallback: browserSpeaker,
     onState: (state) => showMakingVoice(state === 'waiting'),
@@ -789,7 +804,23 @@ function saveVoiceSettings() {
         auto: voice.handsFree,
         engine: engine(),
         modelVoice: $('model-voice-select').value,
+        cloudVoice: $('cloud-voice-select').value,
     });
+}
+
+function showCloudState(state) {
+    $('cloud-note').textContent = cloudNote(state);
+    writeJson(CLOUD_KEY, { key: $('cloud-key').value.trim(), characters: state.characters });
+    syncVoiceTest();
+}
+
+// The clip source that's switched on, if any, and whether it can be tried.
+const clipSource = () => ({ cloud: cloudVoice, small: modelVoice, large: modelVoice }[engine()] ?? null);
+
+function syncVoiceTest() {
+    const ready = clipSource()?.state().status === 'ready';
+    $('voice-test').hidden = !ready;
+    if (!ready) $('model-test-note').textContent = '';
 }
 
 // 'browser', or a model size: 'small' or 'large'.
@@ -802,12 +833,12 @@ function showModelState(state) {
     $('model-status').hidden = !on;
     if (!on) {
         shownModelStatus = 'off';
+        syncVoiceTest();
         return;
     }
     const bar = $('model-progress');
     bar.hidden = state.status !== 'loading';
-    $('model-test').hidden = state.status !== 'ready';
-    if (state.status !== 'ready') $('model-test-note').textContent = '';
+    syncVoiceTest();
     const { total, fraction } = loadProgress(state.files);
     // No number yet, or downloaded and starting up: the bar just shows it's busy.
     if (total === 0 || fraction >= 1) bar.removeAttribute('value');
@@ -819,24 +850,27 @@ function showModelState(state) {
     if (state.status === 'ready') addLog('mic', `model ready: ${state.size}, ${state.device}`);
 }
 
-// Makes one sentence with the model and plays it, saying how each step went.
+// Makes one sentence with the model or the cloud voice and plays it, saying
+// how each step went.
 let testCount = 0;
 
 async function testModelVoice() {
     const note = (text) => { $('model-test-note').textContent = text; };
+    const source = clipSource();
+    const name = engine() === 'cloud' ? 'cloud voice' : 'model voice';
     stopVoice();
     setVoiceState('idle', voice.started ? '' : startHint());
     player.unlock();            // this tap allows audio
-    if (modelVoice.state().status !== 'ready') {
-        note("The model isn't ready yet.");
+    if (source?.state().status !== 'ready') {
+        note("It isn't ready yet.");
         return;
     }
     note('Making a test sentence…');
     const startedAt = performance.now();
-    const clip = await modelVoice.clip(`This is test ${++testCount} of the model voice.`, { rate: Number($('voice-rate').value) });
+    const clip = await source.clip(`This is test ${++testCount} of the ${name}.`, { rate: Number($('voice-rate').value) });
     const took = (performance.now() - startedAt) / 1000;
     if (!clip) {
-        note(`The model couldn't make audio (${took.toFixed(1)} s). The voice log says why.`);
+        note(`It couldn't make audio (${took.toFixed(1)} s). The voice log says why.`);
         return;
     }
     const made = `Made ${timingNote(clip.samples.length / clip.sampleRate, took)}.`;
@@ -851,11 +885,15 @@ async function testModelVoice() {
 // (or comes out of the browser's cache) as soon as it's picked.
 function useEngine(name) {
     const model = Object.hasOwn(MODEL_SIZES, name);
-    speaker = model ? modelSpeaker : browserSpeaker;
+    const cloud = name === 'cloud';
+    speaker = model ? modelSpeaker : cloud ? cloudSpeaker : browserSpeaker;
     if (model) modelVoice.load(name);
     else modelVoice.unload();
-    $('browser-voice-row').hidden = model;
+    $('browser-voice-row').hidden = model || cloud;
     $('model-voice-row').hidden = !model;
+    $('cloud-voice-row').hidden = !cloud;
+    $('cloud-status').hidden = !cloud;
+    syncVoiceTest();
 }
 
 function setUpVoiceSettings() {
@@ -884,10 +922,22 @@ function setUpVoiceSettings() {
         save();
     });
 
+    const cloudSelect = $('cloud-voice-select');
+    cloudSelect.replaceChildren(...CLOUD_VOICES.map(v => new Option(v.name, v.id, false, v.id === saved.cloudVoice)));
+    cloudVoice.setVoice(cloudSelect.value);
+    cloudSelect.addEventListener('change', () => {
+        cloudVoice.setVoice(cloudSelect.value);
+        save();
+    });
+    $('cloud-key').value = readJson(CLOUD_KEY)?.key ?? '';
+    cloudVoice.setKey($('cloud-key').value);
+    $('cloud-key').addEventListener('input', () => cloudVoice.setKey($('cloud-key').value));
+
     const setRate = () => {
         const rate = Number($('voice-rate').value);
         browserSpeaker.setRate(rate);
         modelSpeaker.setRate(rate);
+        cloudSpeaker.setRate(rate);
     };
     $('voice-rate').value = saved.rate ?? 1;
     setRate();
@@ -898,7 +948,7 @@ function setUpVoiceSettings() {
     voice.handsFree = saved.auto ?? false;
     syncDial();
 
-    const startWith = Object.hasOwn(MODEL_SIZES, saved.engine) ? saved.engine : 'browser';
+    const startWith = Object.hasOwn(MODEL_SIZES, saved.engine) || saved.engine === 'cloud' ? saved.engine : 'browser';
     document.querySelector(`#voice-engine input[value="${startWith}"]`).checked = true;
     useEngine(startWith);
     $('voice-engine').addEventListener('change', () => {
