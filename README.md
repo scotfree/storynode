@@ -90,6 +90,13 @@ twice. Without a key, with a refused key, or offline, the browser voice reads.
 This suits one person with their own key; a public site would need a small
 server to hold the key instead.
 
+**Shorter prompts**: the first time Voice asks for something it explains what
+you can say ("Which will it be? Say its number, or its name."). After that the
+same prompt is a few words ("Choices:", "Keep?", "Text?"). If a short prompt
+gets no usable answer, or about fifteen seconds pass with no press in Hold To
+Talk, it reads the full one after all. Saying "help" brings the explanations
+back. What's been explained is remembered per browser.
+
 **Keeping the screen on**: once a story is going in Voice, the page asks the
 phone not to dim and lock, since that stops the reading. "Keep the screen
 awake" under Voice settings turns this off. It only applies while the Voice

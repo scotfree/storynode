@@ -101,4 +101,10 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 - A started story in voice mode holds a screen wake lock (the phone locking mid-page stops
   the reading), re-asked whenever the page becomes visible again, and released on leaving
   voice mode. On by default, with a switch in Voice settings.
+- Prompts come as `{ key, full, brief }` (`choicesPrompt` in script.js, steps from
+  compose.js). The full form explains what can be said; once it has been read through, its
+  key goes in localStorage (`storynode_heard`) and the brief form is used from then on. A
+  brief prompt keeps its full text in `voice.fallback`: an unusable answer, hands-free
+  silence, or `HELP_AFTER_MS` without a press in Hold To Talk reads it. Lines with no key
+  (anything said because an answer was unclear) are always full. "help" clears the keys.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

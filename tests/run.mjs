@@ -5,14 +5,14 @@ import { loadStory, choicesOf, isEnding, parentsOf, addNode, editNode, idFor } f
 import { match, numberFrom, commandFrom, titleHits, hintPhrases, normalize } from '../src/matcher.js';
 import { layoutGraph } from '../src/layout.js';
 import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from '../src/speech.js';
-import { pageScript, choicesScript, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
+import { pageScript, choicesScript, choicesPrompt, fallbackScript, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
 import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
 import { createClipSpeaker } from '../src/clipspeaker.js';
 import { createModelVoice, modelNote, loadProgress, clipStats, timingNote } from '../src/modelvoice.js';
 import { createCloudVoice, pcm16ToFloat32, costNote, cloudError, cloudNote, CLOUD } from '../src/cloudvoice.js';
 import { createStory, listStories, overviewOf } from '../src/library.js';
-import { startCompose, composeStep, composePrompt, composeHints, composedText, tidyTitle, tidyChunk } from '../src/compose.js';
+import { startCompose, composeStep, composePrompt, composeBrief, promptKey, composeHints, composedText, tidyTitle, tidyChunk } from '../src/compose.js';
 
 let passed = 0;
 let failed = 0;
@@ -226,7 +226,7 @@ test('better voices in the right language come first', () => {
 test('the spoken page and choices', () => {
     assert.equal(pageScript({ title: 'The Cave', text: 'It is dark.' }), 'It is dark.');
     assert.equal(pageScript({ title: 'The Cave', text: 'It is dark.' }, { cover: true }), 'The Cave.\nIt is dark.');
-    assert.equal(choicesScript(choices), 'Choice one: Walk down to the beach.\nChoice two: Follow the forest path.\nChoice three: Climb to the castle.\nWhich will it be?');
+    assert.equal(choicesScript(choices), 'Choice one: Walk down to the beach.\nChoice two: Follow the forest path.\nChoice three: Climb to the castle.\nWhich will it be? Say its number, or its name.');
     assert.match(choicesScript([]), /The end/);
     assert.match(choicesScript([choices[0]]), /one way on/);
     assert.equal(numberWord(12), '12');
@@ -658,6 +658,70 @@ test('a dictated node saves like a typed one', () => {
     assert.deepEqual(errors, []);
     assert.equal(id, 'wait-for-the-tide');
     assert.equal(data.nodes.at(-1).text, 'You sit and wait.');
+});
+
+section('prompts that get shorter');
+
+test('choices have a full prompt that explains and a brief one that does not', () => {
+    const list = [{ id: 'b', title: 'Go left' }, { id: 'c', title: 'Go right' }];
+    const many = choicesPrompt(list);
+    assert.equal(many.key, 'choices');
+    assert.equal(many.full, 'Choice one: Go left.\nChoice two: Go right.\nWhich will it be? Say its number, or its name.');
+    assert.equal(many.brief, 'Choices:\nOne: Go left.\nTwo: Go right.');
+    assert.deepEqual(choicesPrompt(list.slice(0, 1)), {
+        key: 'one-choice', full: "There's one way on. Choice one: Go left. Say choice one, or its name.", brief: 'One way on: Go left.',
+    });
+    assert.equal(choicesPrompt([]).brief, 'The end.');
+    assert.equal(choicesPrompt([], { blank: true }).brief, 'No more pages yet.');
+    assert.deepEqual(new Set([many, choicesPrompt([list[0]]), choicesPrompt([]), choicesPrompt([], { blank: true })].map(p => p.key)).size, 4);
+    assert.doesNotMatch(many.brief, /add|edit/i);
+});
+
+test('a brief prompt that gets no usable answer is followed by the full one', () => {
+    assert.equal(fallbackScript('Full.'), 'Full.');
+    assert.equal(fallbackScript('Full.', { heardSomething: true }), "Sorry, I didn't catch that.\nFull.");
+});
+
+test('each step of dictation says which explanation it carries, and a brief form', () => {
+    const start = startCompose();
+    assert.equal(promptKey(start), 'node-title');
+    assert.equal(composeBrief(start), 'New page. Title?');
+    let step = composeStep(start, ['wait for the tide']);
+    assert.equal(step.key, 'confirm');
+    assert.equal(step.brief, 'Wait for the tide. Keep?');
+    assert.match(step.say, /Say keep it, try again, or cancel/);
+    step = composeStep(step.state, ['keep it']);
+    assert.equal(step.key, 'node-text');
+    assert.equal(step.brief, 'Text?');
+    step = composeStep(step.state, ['you sit and wait']);
+    assert.deepEqual([step.key, step.brief, step.say], ['more', 'Got it.', 'Got it. Go on, or say done.']);
+    step = composeStep(step.state, ['done']);
+    assert.equal(step.key, 'confirm');                      // the same three answers as the title read-back
+    assert.equal(step.brief, 'Wait for the tide. You sit and wait. Keep?');
+});
+
+test('the brief forms differ for a story and an edit, as their explanations do', () => {
+    assert.equal(composeBrief(startCompose('story')), 'New story. Title?');
+    assert.equal(promptKey(startCompose('story')), 'story-title');
+    const edit = startCompose('edit', { title: 'Go left', text: 'Left.' });
+    assert.equal(composeBrief(edit), 'Title: Go left. New title?');
+    const text = composeStep(edit, ['keep it']);
+    assert.deepEqual([text.key, text.brief], ['edit-text', 'New text?']);
+    const overview = composeStep(composeStep(startCompose('story'), ['x']).state, ['yes']);
+    assert.deepEqual([overview.key, overview.brief], ['story-text', 'Overview?']);
+});
+
+test('anything unclear is always said in full: it has no brief form', () => {
+    const confirm = composeStep(startCompose(), ['a']).state;
+    for (const step of [
+        composeStep(startCompose(), []),
+        composeStep(confirm, ['purple']),
+        composeStep(confirm, []),
+        composeStep(composeStep(confirm, ['yes']).state, ['done']),
+    ]) {
+        assert.equal(step.key, null, step.say);
+        assert.equal(step.brief, null);
+    }
 });
 
 section('several stories');

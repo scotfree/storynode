@@ -95,6 +95,29 @@ export function composePrompt(state) {
 
 const label = (state) => (isEdit(state) ? 'Editing' : isStory(state) ? 'New story' : 'New node');
 
+// The same arrival, for someone who has heard the long version before.
+export function composeBrief(state) {
+    switch (state.stage) {
+        case 'title':
+            if (isEdit(state)) return `Title: ${state.original.title}. New title?`;
+            return isStory(state) ? 'New story. Title?' : 'New page. Title?';
+        case 'confirm-title':
+            return `${state.title}. Keep?`;
+        case 'text':
+            if (state.chunks.length) return `So far: ${composedText(state)} Go on?`;
+            return isEdit(state) ? 'New text?' : isStory(state) ? 'Overview?' : 'Text?';
+        default:
+            return `${state.title}. ${composedText(state)} Keep?`;
+    }
+}
+
+// Names the explanation a prompt carries, so the app can remember it's been
+// heard. Both read-backs explain the same three answers.
+export function promptKey(state) {
+    if (state.stage === 'confirm-title' || state.stage === 'confirm-text') return 'confirm';
+    return `${state.kind}-${state.stage}`;
+}
+
 // A short line for the screen.
 export function composeStatus(state) {
     switch (state.stage) {
@@ -106,7 +129,12 @@ export function composeStatus(state) {
 }
 
 const cancelled = (state) => ({ state, say: isEdit(state) ? 'Okay, nothing changed.' : 'Okay, nothing added.', outcome: 'cancel' });
-const on = (state, say) => ({ state, say: say ?? composePrompt(state), outcome: 'continue' });
+// A step that carries on. With no words given it's the arrival prompt for the
+// new stage, which has a brief form; other lines pass their own { key, brief }
+// or none, and a line with no key is always said in full.
+const on = (state, say, { key = null, brief = null } = {}) => (say === undefined
+    ? { state, say: composePrompt(state), key: promptKey(state), brief: composeBrief(state), outcome: 'continue' }
+    : { state, say, key, brief, outcome: 'continue' });
 
 export function composeStep(state, alternatives) {
     const guesses = (Array.isArray(alternatives) ? alternatives : [alternatives]).map(squeeze).filter(Boolean);
@@ -128,13 +156,13 @@ export function composeStep(state, alternatives) {
         }
         if (command === 'undo') {
             if (state.chunks.length === 0) return on(state, "There's nothing to remove yet.");
-            return on({ ...state, chunks: state.chunks.slice(0, -1) }, 'Removed the last part. Go on, or say done.');
+            return on({ ...state, chunks: state.chunks.slice(0, -1) }, 'Removed the last part. Go on, or say done.', { key: 'more', brief: 'Removed.' });
         }
         if (command === 'done') {
             if (state.chunks.length === 0) return on(state, "There's no text yet. Say some, or say cancel.");
             return on({ ...state, stage: 'confirm-text' });
         }
-        return on({ ...state, chunks: [...state.chunks, tidyChunk(heard)] }, 'Got it. Go on, or say done.');
+        return on({ ...state, chunks: [...state.chunks, tidyChunk(heard)] }, 'Got it. Go on, or say done.', { key: 'more', brief: 'Got it.' });
     }
 
     // The two read-backs.
@@ -142,10 +170,10 @@ export function composeStep(state, alternatives) {
     if (answer === 'cancel') return cancelled(state);
     if (state.stage === 'confirm-title') {
         if (answer === 'keep') return on({ ...state, stage: 'text' });
-        if (answer === 'again') return on({ ...state, stage: 'title', title: '' }, "Okay. What's the title?");
+        if (answer === 'again') return on({ ...state, stage: 'title', title: '' }, "Okay. What's the title?", { key: 'retitle', brief: 'Title?' });
         return on(state, heard ? `Sorry, I didn't catch that. ${composePrompt(state)}` : CONFIRM_ASK);
     }
     if (answer === 'keep') return { state, say: isEdit(state) ? 'Saved.' : 'Added.', outcome: 'save' };
-    if (answer === 'again') return on({ ...state, stage: 'text', chunks: [] }, `Okay, the text again. ${TEXT_ASK}`);
+    if (answer === 'again') return on({ ...state, stage: 'text', chunks: [] }, `Okay, the text again. ${TEXT_ASK}`, { key: promptKey({ ...state, stage: 'text' }), brief: 'The text again.' });
     return on(state, heard ? `Sorry, I didn't catch that. ${CONFIRM_ASK}` : CONFIRM_ASK);
 }

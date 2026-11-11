@@ -12,16 +12,38 @@ export function pageScript(node, { cover = false } = {}) {
 
 // "Choice one: Walk down to the beach. Choice two: … Which will it be?"
 // `blank`: a new story with only its first page, which isn't an ending.
-export function choicesScript(choices, { blank = false } = {}) {
+export function choicesScript(choices, options) {
+    return choicesPrompt(choices, options).full;
+}
+
+// A prompt comes in two lengths: `full` explains what to say, and `brief` is
+// for a listener who has heard that before. `key` names the explanation, so
+// the app can remember it's been heard. If a brief prompt gets no usable
+// answer, the app falls back to the full one.
+const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+export function choicesPrompt(choices, { blank = false } = {}) {
     if (choices.length === 0) {
         return blank
-            ? 'This story has no more pages yet. Say add new node to write the next one.'
-            : 'The end. Say start over to begin again.';
+            ? { key: 'blank', full: 'This story has no more pages yet. Say add new node to write the next one.', brief: 'No more pages yet.' }
+            : { key: 'ending', full: 'The end. Say start over to begin again.', brief: 'The end.' };
     }
-    if (choices.length === 1) return `There's one way on. Choice one: ${choices[0].title}. Say choice one, or its name.`;
-    const list = choices.map((c, i) => `Choice ${numberWord(i + 1)}: ${c.title}.`).join('\n');
-    return `${list}\nWhich will it be?`;
+    if (choices.length === 1) {
+        return {
+            key: 'one-choice',
+            full: `There's one way on. Choice one: ${choices[0].title}. Say choice one, or its name.`,
+            brief: `One way on: ${choices[0].title}.`,
+        };
+    }
+    return {
+        key: 'choices',
+        full: `${choices.map((c, i) => `Choice ${numberWord(i + 1)}: ${c.title}.`).join('\n')}\nWhich will it be? Say its number, or its name.`,
+        brief: `Choices:\n${choices.map((c, i) => `${capital(numberWord(i + 1))}: ${c.title}.`).join('\n')}`,
+    };
 }
+
+// Said before the full prompt when a brief one didn't land.
+export const fallbackScript = (full, { heardSomething = false } = {}) => (heardSomething ? `Sorry, I didn't catch that.\n${full}` : full);
 
 export const HELP_SCRIPT = 'Say a choice by its number, like choice one, or by its name. '
     + 'You can also say repeat, choices, go back, or start over. '

@@ -7,7 +7,7 @@ import { loadStory, choicesOf, isEnding, addNode, editNode, idFor } from './stor
 import { layoutGraph } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices, sentences } from './speech.js';
-import { pageScript, choicesScript, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL } from './script.js';
+import { pageScript, choicesPrompt, fallbackScript, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
 import { createSweep } from './arc.js';
 import { createClipSpeaker } from './clipspeaker.js';
@@ -15,13 +15,15 @@ import { createModelVoice, modelNote, loadProgress, timingNote, MODEL_SIZES, MOD
 import { createPlayer } from './player.js';
 import { createCloudVoice, cloudNote, CLOUD_VOICES } from './cloudvoice.js';
 import { createStory, listStories, overviewOf, NEW_STORY_LABEL } from './library.js';
-import { startCompose, composeStep, composePrompt, composeStatus, composeHints, composedText } from './compose.js';
+import { startCompose, composeStep, composePrompt, composeBrief, promptKey, composeStatus, composeHints, composedText } from './compose.js';
 
 const STORIES_URL = 'stories/';         // index.json there names the built-in stories
 const LIBRARY_KEY = 'storynode_library';   // { stories: { id: data }, current: id }
 const OLD_STORY_KEY = 'storynode_story';   // from before there were several
 const NEW_STORY = '+new';              // the dropdown's last option
 const CLOUD_KEY = 'storynode_cloud';   // { key, characters }: the listener's own API key, and how much it's been used
+const HEARD_KEY = 'storynode_heard';   // the prompts whose full explanation has been read out
+const HELP_AFTER_MS = 15000;   // Hold To Talk: a brief prompt, then this long with no press, gets the full one
 const VOICE_KEY = 'storynode_voice';   // { name, rate, auto }
 const MAX_RETRIES = 2;
 const HOLD_MIN_MS = 250;       // a shorter press is a tap, not an answer
@@ -304,6 +306,7 @@ const voice = {
     state: 'idle', run: 0, listening: null, retries: 0, started: false, pressedAt: 0,
     handsFree: false, stage: 'page', resume: null,
     compose: null,     // { parent, state } while a new node is being dictated
+    fallback: null,    // the full prompt, while a brief one is waiting for an answer
 };
 const voiceLog = createLog();
 
@@ -439,11 +442,50 @@ function warmChoices() {
     for (let i = 0; i < 3; i++) modelVoice.warm(openings.map(o => o[i]).filter(Boolean), { rate });
 }
 
+// --- prompts that get shorter ---
+//
+// The first time a prompt is read it explains what can be said. That's
+// remembered (in localStorage), and from then on the same prompt is a few
+// words: "Choices:", "Keep?". If the brief one gets no usable answer, the
+// full one is read after all. Saying "help" starts the explanations over.
+
+const heardPrompts = new Set(readJson(HEARD_KEY) ?? []);
+
+// Says a prompt ({ key, full, brief }) in the length this listener needs.
+async function sayPrompt(prompt, run, from = 0) {
+    const brief = Boolean(prompt.key && prompt.brief && heardPrompts.has(prompt.key));
+    voice.fallback = brief ? prompt.full : null;
+    if (!(await say(brief ? prompt.brief : prompt.full, run, from))) return false;
+    if (prompt.key && !brief) {
+        heardPrompts.add(prompt.key);
+        writeJson(HEARD_KEY, [...heardPrompts]);
+    }
+    return true;
+}
+
+function forgetHeardPrompts() {
+    heardPrompts.clear();
+    writeJson(HEARD_KEY, null);
+}
+
 // After speaking: hands-free opens the mic, Hold To Talk waits for a press.
 function awaitAnswer(run) {
     warmChoices();
-    if (handsFree()) listen(run);
-    else setVoiceState('idle', voice.compose ? `${composeStatus(voice.compose.state)} Hold the button to answer.` : 'Hold the button to answer.');
+    const idle = () => setVoiceState('idle', voice.compose ? `${composeStatus(voice.compose.state)} Hold the button to answer.` : 'Hold the button to answer.');
+    if (handsFree()) {
+        listen(run);
+        return;
+    }
+    idle();
+    // Nothing to time out on without an open mic, so a brief prompt that
+    // nobody answers gets its full version after a while, once.
+    if (!voice.fallback) return;
+    setTimeout(async () => {
+        if (run !== voice.run || voice.state !== 'idle' || !voice.fallback) return;
+        const full = voice.fallback;
+        voice.fallback = null;
+        if (await say(full, run)) idle();
+    }, HELP_AFTER_MS);
 }
 
 // Reads the page and the choices, then waits for an answer. `from` picks up
@@ -462,7 +504,7 @@ async function voiceLoop(run, { skipPage = false, from = null } = {}) {
     if (stage === 'page' || stage === 'choices') {
         voice.stage = 'choices';
         setVoiceState('reading', 'Your choices…');
-        if (!(await say(choicesScript(choices(), { blank: isBlank() }), run, stage === 'choices' ? (from?.sentence ?? 0) : 0))) return;
+        if (!(await sayPrompt(choicesPrompt(choices(), { blank: isBlank() }), run, stage === 'choices' ? (from?.sentence ?? 0) : 0))) return;
     }
     voice.stage = 'answer';
     awaitAnswer(run);
@@ -564,7 +606,14 @@ async function listen(run, { hold = false } = {}) {
         setVoiceState('idle', 'Tap to try again.');
         return;
     }
-    if (!(await say(retryScript(Math.min(voice.retries, MAX_RETRIES), { hold: !handsFree() }), run))) return;
+    // A brief prompt that didn't land is followed by its full version;
+    // after that it's the usual reminders.
+    const full = voice.fallback;
+    voice.fallback = null;
+    const line = full
+        ? fallbackScript(full, { heardSomething: alternatives.length > 0 })
+        : retryScript(Math.min(voice.retries, MAX_RETRIES), { hold: !handsFree() });
+    if (!(await say(line, run))) return;
     if (!handsFree()) setVoiceState('idle', 'Hold the button to answer.');
     else if (voice.retries < MAX_RETRIES) listen(run);
     else setVoiceState('idle', 'Tap to try again.');
@@ -592,6 +641,7 @@ async function command(name, run) {
         case 'edit':
             return startComposing(run, 'edit');
         case 'help':
+            forgetHeardPrompts();   // asking for help brings the full prompts back
             if (!(await say(HELP_SCRIPT, run))) return;
             return awaitAnswer(run);
         case 'stop':
@@ -642,7 +692,7 @@ function onTalkTap() {
     const run = voice.run;
     if (voice.compose) {
         voice.retries = 0;
-        composeSay(composePrompt(voice.compose.state), run);
+        composeSay({ say: composePrompt(voice.compose.state) }, run);
         return;
     }
     const from = voice.resume?.id === currentId ? voice.resume : null;
@@ -1146,12 +1196,15 @@ function startComposing(run, kind) {
     voice.compose = { parent: currentId, state: startCompose(kind, original) };
     voice.retries = 0;
     addLog('compose', { story: 'new story', edit: `editing ${currentId}` }[kind] ?? `new node after ${currentId}`);
-    return composeSay(composePrompt(voice.compose.state), run);
+    const { state } = voice.compose;
+    return composeSay({ say: composePrompt(state), key: promptKey(state), brief: composeBrief(state) }, run);
 }
 
-async function composeSay(text, run) {
+// Says a line of the dictation ({ say, key, brief } from compose.js), brief
+// if its explanation has been heard before, then waits for the answer.
+async function composeSay({ say: full, key = null, brief = null }, run) {
     setVoiceState('reading', composeStatus(voice.compose.state));
-    if (!(await say(text, run))) return;
+    if (!(await sayPrompt({ key, full, brief }, run))) return;
     awaitAnswer(run);
 }
 
@@ -1166,7 +1219,8 @@ async function composeListen(run, { hold = false } = {}) {
     });
     if (!alternatives || voice.compose !== composing) return;
 
-    const { state, say: line, outcome } = composeStep(composing.state, alternatives);
+    const step = composeStep(composing.state, alternatives);
+    const { state, say: line, outcome } = step;
     addLog('result', `${composeName(composing.state)}: ${composing.state.stage} → ${outcome === 'continue' ? state.stage : outcome}`);
     $('voice-heard').textContent = alternatives[0] ? `“${alternatives[0]}”` : 'Nothing heard';
 
@@ -1192,7 +1246,7 @@ async function composeListen(run, { hold = false } = {}) {
         return;
     }
     composing.state = state;
-    return composeSay(line, run);
+    return composeSay(step, run);
 }
 
 function setUpAddDialog() {
