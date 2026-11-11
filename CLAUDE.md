@@ -107,4 +107,10 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   brief prompt keeps its full text in `voice.fallback`: an unusable answer, hands-free
   silence, or `HELP_AFTER_MS` without a press in Hold To Talk reads it. Lines with no key
   (anything said because an answer was unclear) are always full. "help" clears the keys.
+- Two voices mirror the two typefaces: story words in one, the app's own words in another.
+  Scripts stay plain strings; `voiceParts` in script.js works out the role afterwards from
+  the story words in play (this page, its choices, anything being dictated). A sentence is
+  the story's if it is one of those, and "label: story words" is split at the colon, each
+  part its own clip. `speak()` takes `partsOf`, and clip sources get `role`; only the
+  cloud voice acts on it (a voice and a line of direction per role), the others ignore it.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

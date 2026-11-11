@@ -65,3 +65,34 @@ export function retryScript(attempt, { hold = false } = {}) {
 // Never read out with the choices; it's a link on the page and a thing you can say.
 export const ADD_LABEL = 'Add new node';
 export const EDIT_LABEL = 'Edit this node';
+
+// --- two voices ---
+//
+// What's spoken is either the story's own words (titles, page text: what the
+// page shows in the typewriter face) or the app talking ("Choice one:", "Say
+// keep it…"). A voice that can tell them apart reads each in its own voice.
+//
+// The scripts above stay plain strings. Which words are the story's is worked
+// out afterwards, from the story words in play: a sentence is the story's if
+// it is one of them, and a sentence that ends "…: <story words>" is split at
+// the colon ("Choice one:" + "Walk down to the beach.").
+
+const bare = (s) => String(s ?? '').trim().replace(/[.!?…:]+$/, '').trim();
+
+// The set to look sentences up in, from titles and texts (each may hold
+// several sentences). `split` is the sentence splitter from speech.js.
+export function storySentences(texts, split) {
+    const found = new Set();
+    for (const text of texts) for (const sentence of split(text)) if (bare(sentence)) found.add(bare(sentence));
+    return found;
+}
+
+// One spoken sentence → [{ text, role }], role 'story' or 'app'.
+export function voiceParts(sentence, story) {
+    if (story.has(bare(sentence))) return [{ text: sentence, role: 'story' }];
+    const colon = sentence.indexOf(': ');
+    if (colon > 0 && story.has(bare(sentence.slice(colon + 2)))) {
+        return [{ text: sentence.slice(0, colon + 1), role: 'app' }, { text: sentence.slice(colon + 2), role: 'story' }];
+    }
+    return [{ text: sentence, role: 'app' }];
+}

@@ -13,9 +13,13 @@ export const CLOUD = {
     url: 'https://api.openai.com/v1/audio/speech',
     model: 'gpt-4o-mini-tts',
     sampleRate: 24000,          // what its "pcm" format is: 24 kHz, 16-bit, mono
-    // This model takes direction in plain words.
+    // This model takes direction in plain words. Two roles, two directions:
+    // the story's own words, and the app speaking for itself.
     instructions: 'Read this aloud as a warm, unhurried storyteller narrating an adventure to one listener. '
         + 'Keep the same voice and pace from line to line.',
+    appInstructions: 'Say this plainly and briskly, as a friendly guide giving a short prompt or instruction. '
+        + 'Keep the same voice and pace from line to line.',
+    voices: { story: 'marin', app: 'cedar' },
     dollarsPerThousandCharacters: 0.015,    // an estimate; it is billed by audio length
 };
 
@@ -83,7 +87,7 @@ export function createCloudVoice({
     now = () => Date.now(),
 } = {}) {
     let key = '';
-    let voice = CLOUD_VOICES[0].id;
+    let voices = { ...CLOUD.voices };
     let stopped = null;         // why it gave up on this key, if it has
     let sent = characters;
     let running = 0;
@@ -114,7 +118,7 @@ export function createCloudVoice({
                     model: CLOUD.model,
                     voice: request.voice,
                     input: request.text,
-                    instructions: CLOUD.instructions,
+                    instructions: request.role === 'app' ? CLOUD.appInstructions : CLOUD.instructions,
                     response_format: 'pcm',
                     ...(request.speed === 1 ? {} : { speed: request.speed }),
                 }),
@@ -161,7 +165,8 @@ export function createCloudVoice({
 
     return {
         state,
-        setVoice(id) { voice = id; },
+        // One voice for the story's words and one for the app's.
+        setVoices(chosen) { voices = { ...voices, ...chosen }; },
 
         // A new key gets a fresh start.
         setKey(value) {
@@ -172,10 +177,13 @@ export function createCloudVoice({
         },
 
         // A clip for one sentence, or null if the service can't be used.
-        clip(text, { rate = 1 } = {}) {
+        // `role` is 'story' (the default) or 'app'.
+        clip(text, { rate = 1, role = 'story' } = {}) {
             if (!key || stopped) return Promise.resolve(null);
             const speed = Math.round(rate * 100) / 100;
-            const cacheKey = `${voice}|${speed}|${text}`;
+            const part = role === 'app' ? 'app' : 'story';
+            const voice = voices[part];
+            const cacheKey = `${part}|${voice}|${speed}|${text}`;
             if (cache.has(cacheKey)) return Promise.resolve(cache.get(cacheKey));
             return new Promise((resolve) => {
                 const same = pending.get(cacheKey);
@@ -183,7 +191,7 @@ export function createCloudVoice({
                     same.waiters.push(resolve);
                     return;
                 }
-                const request = { key: cacheKey, apiKey: key, text, voice, speed, waiters: [resolve] };
+                const request = { key: cacheKey, apiKey: key, text, voice, role: part, speed, waiters: [resolve] };
                 pending.set(cacheKey, request);
                 queue.push(request);
                 pump();

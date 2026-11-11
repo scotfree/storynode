@@ -37,22 +37,28 @@ export function createClipSpeaker({ source, player, fallback, onState = () => {}
         // Resolves true when done, false if cancelled. One sentence at a
         // time. Every clip is asked for up front, so a source that makes
         // them slowly works through the rest while the first ones play.
-        async speak(text, { from = 0 } = {}) {
+        //
+        // `partsOf(sentence)` may split a sentence into [{ text, role }] for
+        // a source with more than one voice; the role is passed along with
+        // each request. The place kept for a resume still counts sentences.
+        async speak(text, { from = 0, partsOf = (sentence) => [{ text: sentence, role: null }] } = {}) {
             const mine = ++token;
             stopAll();
             position = from;
-            const parts = sentences(text).slice(from);
-            const clips = parts.map(part => source.clip(part, { rate }));
-            for (let i = 0; i < parts.length; i++) {
-                onState('waiting');
-                const clip = await clips[i];
-                if (mine !== token) return false;
+            const lines = sentences(text).slice(from).map(partsOf);
+            const clips = lines.map(parts => parts.map(part => source.clip(part.text, { rate, role: part.role })));
+            for (let i = 0; i < lines.length; i++) {
                 position = from + i;
-                onState('playing');
-                let ok = clip ? await player.play(clip) : false;
-                if (mine !== token) return false;
-                if (!ok) ok = await fallback.speak(parts[i]);
-                if (mine !== token || !ok) return false;
+                for (let j = 0; j < lines[i].length; j++) {
+                    onState('waiting');
+                    const clip = await clips[i][j];
+                    if (mine !== token) return false;
+                    onState('playing');
+                    let ok = clip ? await player.play(clip) : false;
+                    if (mine !== token) return false;
+                    if (!ok) ok = await fallback.speak(lines[i][j].text);
+                    if (mine !== token || !ok) return false;
+                }
                 position = from + i + 1;
             }
             return true;

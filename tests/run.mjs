@@ -5,7 +5,7 @@ import { loadStory, choicesOf, isEnding, parentsOf, addNode, editNode, idFor } f
 import { match, numberFrom, commandFrom, titleHits, hintPhrases, normalize } from '../src/matcher.js';
 import { layoutGraph } from '../src/layout.js';
 import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from '../src/speech.js';
-import { pageScript, choicesScript, choicesPrompt, fallbackScript, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
+import { pageScript, choicesScript, choicesPrompt, fallbackScript, storySentences, voiceParts, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
 import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
 import { createClipSpeaker } from '../src/clipspeaker.js';
@@ -1118,6 +1118,95 @@ await testAsync('a hiccup or silence loses one sentence, not the voice', async (
     const clip = other.clip('One.');
     quiet.audio(0, 0, 0, 0);
     assert.equal(await clip, null);
+});
+
+section('two voices');
+
+// Splits a whole script the way the app does, as "role: text" lines.
+function voiced(script, storyTexts) {
+    const story = storySentences(storyTexts, sentences);
+    return sentences(script).flatMap(s => voiceParts(s, story)).map(p => `${p.role}: ${p.text}`);
+}
+
+test('a page is the story; its choices are the app naming them and the story saying them', () => {
+    const page = { title: 'The Cave', text: 'It is dark. Something drips!' };
+    const list = [{ id: 'b', title: 'Go left' }, { id: 'c', title: 'Light a match.' }];
+    const words = [page.title, page.text, ...list.map(c => c.title)];
+    assert.deepEqual(voiced(pageScript(page, { cover: true }), words), ['story: The Cave.', 'story: It is dark.', 'story: Something drips!']);
+    assert.deepEqual(voiced(choicesPrompt(list).full, words), [
+        'app: Choice one:', 'story: Go left.',
+        'app: Choice two:', 'story: Light a match..',
+        'app: Which will it be?', 'app: Say its number, or its name.',
+    ]);
+    assert.deepEqual(voiced(choicesPrompt(list).brief, words), ['app: Choices:', 'app: One:', 'story: Go left.', 'app: Two:', 'story: Light a match..']);
+    assert.deepEqual(voiced(choicesPrompt(list.slice(0, 1)).full, words), [
+        "app: There's one way on.", 'app: Choice one:', 'story: Go left.', 'app: Say choice one, or its name.',
+    ]);
+});
+
+test('read-backs say the dictated words in the story voice', () => {
+    let step = composeStep(startCompose(), ['wait for the tide']);
+    assert.deepEqual(voiced(step.say, [step.state.title]), ['app: The title is:', 'story: Wait for the tide.', 'app: Say keep it, try again, or cancel.']);
+    assert.deepEqual(voiced(step.brief, [step.state.title]), ['story: Wait for the tide.', 'app: Keep?']);
+    step = composeStep(composeStep(composeStep(step.state, ['yes']).state, ['you sit and wait']).state, ['done']);
+    assert.deepEqual(voiced(step.say, [step.state.title, ...step.state.chunks]), [
+        "app: Here's the page.", 'story: Wait for the tide.', 'story: You sit and wait.', 'app: Say keep it, try again, or cancel.',
+    ]);
+});
+
+test('everything else is the app, even when a title happens to turn up in it', () => {
+    const story = storySentences(['Help', 'Say a number', 'Go left'], sentences);
+    assert.deepEqual(voiceParts("Sorry, I didn't catch that.", story), [{ text: "Sorry, I didn't catch that.", role: 'app' }]);
+    assert.deepEqual(voiceParts('You can also say repeat, choices, go back, or start over.', story).map(p => p.role), ['app']);
+    assert.deepEqual(voiceParts('Now go left quickly.', story).map(p => p.role), ['app']);    // only whole sentences, or after a colon
+    assert.deepEqual(voiceParts('Go left?', story).map(p => p.role), ['story']);
+});
+
+await testAsync('the cloud voice uses one voice and direction for the story, another for the app', async () => {
+    const { fetch, calls, audio } = fakeFetch();
+    const cloud = createCloudVoice({ fetch });
+    cloud.setKey('sk-test');
+    cloud.clip('Go left.', { role: 'story' });
+    cloud.clip('Choice one:', { role: 'app' });
+    cloud.clip('No role given.');
+    assert.deepEqual(calls.map(c => c.body.voice), ['marin', 'cedar', 'marin']);
+    assert.equal(calls[0].body.instructions, CLOUD.instructions);
+    assert.equal(calls[1].body.instructions, CLOUD.appInstructions);
+    audio(0, 9000);
+    audio(1, 9000);
+    audio(2, 9000);
+    await tick();
+    // The same words in the other role are a different clip.
+    cloud.clip('Go left.', { role: 'app' });
+    assert.equal(calls.length, 4);
+    cloud.setVoices({ app: 'onyx' });
+    cloud.clip('Choice two:', { role: 'app' });
+    assert.deepEqual([calls[4].body.voice, calls[4].body.input], ['onyx', 'Choice two:']);
+});
+
+await testAsync('a sentence in two parts plays as two clips, each asked for with its role', async () => {
+    const asked = [];
+    let endPlay = null;
+    const played = [];
+    const speaker = createClipSpeaker({
+        source: { clip: async (text, { role }) => { asked.push(`${role}: ${text}`); return text; }, drop() {} },
+        player: { unlock() {}, play: (clip) => new Promise((resolve) => { played.push(clip); endPlay = resolve; }), stop() {} },
+        fallback: { speak: async () => true, cancel() {} },
+    });
+    const story = storySentences(['Go left'], sentences);
+    const done = speaker.speak('Choice one: Go left. Which will it be?', { partsOf: (s) => voiceParts(s, story) });
+    await tick();
+    assert.deepEqual(asked, ['app: Choice one:', 'story: Go left.', 'app: Which will it be?']);
+    assert.equal(speaker.position(), 0);
+    endPlay(true);
+    await tick();
+    assert.equal(speaker.position(), 0);                    // still inside the first sentence
+    endPlay(true);
+    await tick();
+    assert.equal(speaker.position(), 1);
+    endPlay(true);
+    assert.equal(await done, true);
+    assert.deepEqual(played, ['Choice one:', 'Go left.', 'Which will it be?']);
 });
 
 section('editing a node');

@@ -7,13 +7,13 @@ import { loadStory, choicesOf, isEnding, addNode, editNode, idFor } from './stor
 import { layoutGraph } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices, sentences } from './speech.js';
-import { pageScript, choicesPrompt, fallbackScript, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL } from './script.js';
+import { pageScript, choicesPrompt, fallbackScript, storySentences, voiceParts, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
 import { createSweep } from './arc.js';
 import { createClipSpeaker } from './clipspeaker.js';
 import { createModelVoice, modelNote, loadProgress, timingNote, MODEL_SIZES, MODEL_VOICES } from './modelvoice.js';
 import { createPlayer } from './player.js';
-import { createCloudVoice, cloudNote, CLOUD_VOICES } from './cloudvoice.js';
+import { createCloudVoice, cloudNote, CLOUD, CLOUD_VOICES } from './cloudvoice.js';
 import { createStory, listStories, overviewOf, NEW_STORY_LABEL } from './library.js';
 import { startCompose, composeStep, composePrompt, composeBrief, promptKey, composeStatus, composeHints, composedText } from './compose.js';
 
@@ -413,9 +413,21 @@ function stopVoice() {
     voice.listening = null;
 }
 
+// The story's own words that could be spoken right now: this page, its
+// choices, and anything being dictated. A voice with two parts reads these
+// in the story voice and everything else in the app's.
+function storyWordsNow() {
+    const n = node();
+    const words = [n.title, n.text, ...choices().map(c => c.title)];
+    const composing = voice.compose?.state;
+    if (composing) words.push(composing.title, ...composing.chunks, composing.original?.title, composing.original?.text);
+    return storySentences(words.filter(Boolean), sentences);
+}
+
 async function say(text, run, from = 0) {
     setVoiceState('reading', voice.state === 'reading' ? $('voice-status').textContent : '');
-    const done = await speaker.speak(text, { from });
+    const story = storyWordsNow();
+    const done = await speaker.speak(text, { from, partsOf: (sentence) => voiceParts(sentence, story) });
     return done && run === voice.run;
 }
 
@@ -911,6 +923,7 @@ function saveVoiceSettings() {
         engine: engine(),
         modelVoice: $('model-voice-select').value,
         cloudVoice: $('cloud-voice-select').value,
+        cloudAppVoice: $('cloud-app-voice-select').value,
         awake: $('keep-awake').checked,
     });
 }
@@ -999,6 +1012,7 @@ function useEngine(name) {
     $('browser-voice-row').hidden = model || cloud;
     $('model-voice-row').hidden = !model;
     $('cloud-voice-row').hidden = !cloud;
+    $('cloud-app-voice-row').hidden = !cloud;
     $('cloud-status').hidden = !cloud;
     syncVoiceTest();
 }
@@ -1029,13 +1043,18 @@ function setUpVoiceSettings() {
         save();
     });
 
-    const cloudSelect = $('cloud-voice-select');
-    cloudSelect.replaceChildren(...CLOUD_VOICES.map(v => new Option(v.name, v.id, false, v.id === saved.cloudVoice)));
-    cloudVoice.setVoice(cloudSelect.value);
-    cloudSelect.addEventListener('change', () => {
-        cloudVoice.setVoice(cloudSelect.value);
-        save();
-    });
+    // Two cloud voices: one for the story's words, one for the app's.
+    const cloudSelects = { story: $('cloud-voice-select'), app: $('cloud-app-voice-select') };
+    const savedCloud = { story: saved.cloudVoice ?? CLOUD.voices.story, app: saved.cloudAppVoice ?? CLOUD.voices.app };
+    const setCloudVoices = () => cloudVoice.setVoices({ story: cloudSelects.story.value, app: cloudSelects.app.value });
+    for (const [part, picker] of Object.entries(cloudSelects)) {
+        picker.replaceChildren(...CLOUD_VOICES.map(v => new Option(v.name, v.id, false, v.id === savedCloud[part])));
+        picker.addEventListener('change', () => {
+            setCloudVoices();
+            save();
+        });
+    }
+    setCloudVoices();
     $('cloud-key').value = readJson(CLOUD_KEY)?.key ?? '';
     cloudVoice.setKey($('cloud-key').value);
     $('cloud-key').addEventListener('input', () => cloudVoice.setKey($('cloud-key').value));

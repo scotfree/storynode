@@ -82,7 +82,9 @@ and Hugging Face).
 **A cloud voice (experimental)**: the last stop on the Voice switch is Cloud,
 which sends each sentence to OpenAI's speech service (`gpt-4o-mini-tts`) and
 plays what comes back. It needs your own OpenAI API key, pasted under the
-switch: it's kept in that browser only and sent only to OpenAI. The cost is
+switch: it's kept in that browser only and sent only to OpenAI. It reads in two voices, each with its own picker: a story
+voice (Marin to start) for the story's own words, and an app voice (Cedar) for
+the app's prompts and instructions, matching the two typefaces on the page. The cost is
 roughly 1.5 cents per thousand characters read, so a few cents for a story
 like the sample; the panel shows how much has been sent from that browser. A
 sentence already fetched is kept until the page is reloaded and isn't paid for
