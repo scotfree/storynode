@@ -69,7 +69,10 @@ connection in the app yet.
 on the Map opens the same form: the creation form with the node's title and
 text already in it. In Voice, say "edit this node" and it asks the same
 questions as for a new node; "keep it" at the title or the text leaves that
-part as it was. Only the words change: the node's place and its choices stay.
+part as it was. Only the words change: the node's place and its choices stay. The edit form
+also has "add new node" and "connect node", which work from the node being
+edited, so from the Map you can grow the story at any node; any change in the
+form is saved first.
 Editing a story's first page renames the story if it was named after that page.
 
 **A better voice (experimental)**: under Voice settings, the Voice switch goes

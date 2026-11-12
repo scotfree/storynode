@@ -1163,6 +1163,7 @@ function saveEdit({ id, title, text }) {
 
 let adding = 'node';    // what the form is for: 'node', 'story' or 'edit'
 let editingId = null;   // the node being edited
+let addingParent = null; // the node a new one goes after
 
 // One form for all three. Editing is the same form with the node's own words
 // in it; from the map it can be any node, and offers to read from there.
@@ -1174,6 +1175,8 @@ function openAddDialog(kind = 'node', id = currentId) {
     setVoiceState('idle', voice.started ? '' : startHint());
     adding = kind;
     editingId = kind === 'edit' ? id : null;
+    addingParent = kind === 'node' ? id : null;
+    $('edit-links').hidden = kind !== 'edit';
     $('add-form').reset();
     $('add-heading').textContent = { story: NEW_STORY_LABEL, edit: EDIT_LABEL }[kind] ?? ADD_LABEL;
     $('add-text-label').textContent = kind === 'story' ? 'Overview' : 'Text';
@@ -1188,7 +1191,7 @@ function openAddDialog(kind = 'node', id = currentId) {
             ? 'The story’s first page. Its choices stay as they are.'
             : 'Its place in the story and its choices stay as they are.';
     } else {
-        $('add-hint').replaceChildren('A new choice after ', el('strong', {}, node().title), '.');
+        $('add-hint').replaceChildren('A new choice after ', el('strong', {}, story.byId.get(id).title), '.');
     }
     $('add-errors').hidden = true;
     $('add-dialog').showModal();
@@ -1202,7 +1205,7 @@ function submitAdd(e) {
     let id = null;
     if (adding === 'story') errors = addStory(fields);
     else if (adding === 'edit') errors = saveEdit({ id: editingId, ...fields });
-    else ({ id, errors } = saveNode({ parent: currentId, ...fields }));
+    else ({ id, errors } = saveNode({ parent: addingParent, ...fields }));
     if (errors.length) {
         $('add-errors').textContent = errors.join('\n');
         $('add-errors').hidden = false;
@@ -1213,6 +1216,24 @@ function submitAdd(e) {
     window.scrollTo(0, 0);
     // The submit is a tap, so voice mode can read the new page straight away.
     if (mode() === 'voice' && voice.started) voiceLoop(voice.run);
+}
+
+// From the edit form: add a node after the one being edited, or connect it
+// to another. Changes made in the form are saved first, so they aren't lost.
+function growFromEdited(open) {
+    const id = editingId;
+    const editing = story.byId.get(id);
+    const fields = { title: $('add-title').value, text: $('add-text').value };
+    if (fields.title.trim() !== editing.title || fields.text.trim() !== editing.text) {
+        const errors = saveEdit({ id, ...fields });
+        if (errors.length) {
+            $('add-errors').textContent = errors.join('\n');
+            $('add-errors').hidden = false;
+            return;
+        }
+    }
+    $('add-dialog').close();
+    open(id);
 }
 
 // From the map's edit form: go and read that node instead.
@@ -1300,13 +1321,12 @@ function saveConnection(from, to) {
     return [];
 }
 
-function openConnectDialog() {
+function openConnectDialog(from = currentId) {
     if (!story) return;
     stopVoice();
     voice.compose = null;
     voice.connect = null;
     setVoiceState('idle', voice.started ? '' : startHint());
-    const from = currentId;
     const pages = connectable(story, from);
     const list = $('connect-list');
     const fill = () => {
@@ -1331,7 +1351,7 @@ function openConnectDialog() {
     };
     $('connect-heading').textContent = CONNECT_LABEL;
     $('connect-hint').replaceChildren(...(pages.length
-        ? ['Pick a page to add as a choice after ', el('strong', {}, node().title), '.']
+        ? ['Pick a page to add as a choice after ', el('strong', {}, story.byId.get(from).title), '.']
         : ["There's no other page this one can connect to yet. Pages that lead here can't be choices, or the story would loop."]));
     $('connect-filter').value = '';
     $('connect-filter').hidden = pages.length < 8;
@@ -1399,8 +1419,12 @@ async function connectListen(run, { hold = false } = {}) {
 function setUpAddDialog() {
     for (const id of ['read-connect', 'voice-connect']) {
         $(id).textContent = CONNECT_LABEL;
-        $(id).addEventListener('click', openConnectDialog);
+        $(id).addEventListener('click', () => openConnectDialog());
     }
+    $('edit-add').textContent = ADD_LABEL;
+    $('edit-add').addEventListener('click', () => growFromEdited(id => openAddDialog('node', id)));
+    $('edit-connect').textContent = CONNECT_LABEL;
+    $('edit-connect').addEventListener('click', () => growFromEdited(id => openConnectDialog(id)));
     $('connect-cancel').addEventListener('click', () => $('connect-dialog').close());
     for (const id of ['read-add', 'voice-add']) {
         $(id).textContent = ADD_LABEL;

@@ -68,7 +68,8 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   `continuous` mode.
 - Editing reuses creation: the same form, filled in, and the same dictation with `kind`
   'edit' (where "keep it" at a question leaves that part unchanged). Map nodes open the
-  edit form, which carries "Read from here" so the map still navigates. Ids never change
+  edit form, which carries "Read from here" so the map still navigates, and "add new node"
+  and "connect node" for the node being edited (saving the form's changes first). Ids never change
   on edit, so saved places and links between nodes hold.
 - "Connect node" makes an existing node a choice here by adding the current node to its
   `parent` list; that's the whole change. Candidates exclude the node, its choices and

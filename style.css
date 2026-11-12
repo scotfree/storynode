@@ -373,6 +373,10 @@ button:disabled {
     resize: vertical;
 }
 
+.add-form .edit-links {
+    margin: 0 0 0.75rem;
+}
+
 .add-form .row {
     justify-content: flex-end;
 }

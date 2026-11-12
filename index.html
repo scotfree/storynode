@@ -126,6 +126,11 @@
             <label>Title <input id="add-title" type="text" maxlength="80" required autocomplete="off"></label>
             <label><span id="add-text-label">Text</span> <textarea id="add-text" rows="7" required></textarea></label>
             <p id="add-errors" class="errors" hidden></p>
+            <!-- Editing only: grow the story from the node being edited. -->
+            <div id="edit-links" class="page-links edit-links" hidden>
+                <button id="edit-add" class="add-link" type="button"></button>
+                <button id="edit-connect" class="add-link" type="button"></button>
+            </div>
             <div class="row">
                 <button id="add-cancel" class="ghost" type="button">Cancel</button>
                 <button id="add-read" class="ghost" type="button" hidden>Read from here</button>
