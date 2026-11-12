@@ -25,8 +25,14 @@
     <main>
         <!-- Map: the whole story's shape, titles only. -->
         <section id="map-view" class="view" hidden>
-            <p class="hint">Click a node to edit it, or to read from there.</p>
-            <div class="map-scroll"><svg id="map-svg" role="img" aria-label="Story map"></svg></div>
+            <div class="map-bar">
+                <fieldset id="map-look" class="switch map-switch" aria-label="Map view">
+                    <label><input type="radio" name="map-look" value="normal" checked><span>Normal</span></label>
+                    <label><input type="radio" name="map-look" value="fisheye"><span>Fisheye</span></label>
+                </fieldset>
+                <p id="map-hint" class="hint"></p>
+            </div>
+            <div id="map-scroll" class="map-scroll"><svg id="map-svg" role="img" aria-label="Story map"></svg></div>
         </section>
 
         <!-- Read: one page of the story, choices at the bottom. -->

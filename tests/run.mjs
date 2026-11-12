@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { loadStory, choicesOf, isEnding, parentsOf, addNode, editNode, connectNode, connectable, idFor } from '../src/story.js';
 import { match, numberFrom, commandFrom, titleHits, hintPhrases, normalize } from '../src/matcher.js';
-import { layoutGraph } from '../src/layout.js';
+import { layoutGraph, fisheyeAxis, fisheyeLayout, zoomRange, clampZoom, zoomAround } from '../src/layout.js';
 import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from '../src/speech.js';
 import { pageScript, choicesScript, choicesPrompt, fallbackScript, storySentences, voiceParts, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
 import { createLog, matchLines } from '../src/voicelog.js';
@@ -209,6 +209,72 @@ test('nodes in a row do not overlap and fit inside the drawing', () => {
 });
 
 // --- speech helpers and script ---
+section('map: fisheye and zoom');
+
+test('a fisheye axis keeps its ends and focus, stays in order, and magnifies at the focus', () => {
+    for (const v of [0, 50, 100]) assert.equal(fisheyeAxis(v, 50, 0, 100, 4), v);
+    assert.equal(fisheyeAxis(30, 50, 0, 100, 0), 30);                 // no distortion
+    let last = -1;
+    for (let v = 0; v <= 100; v += 5) {
+        const out = fisheyeAxis(v, 30, 0, 100, 3);
+        assert.ok(out > last, `in order at ${v}`);
+        assert.ok(out >= 0 && out <= 100);
+        last = out;
+    }
+    const near = (fisheyeAxis(50.001, 50, 0, 100, 4) - 50) / 0.001;
+    assert.ok(Math.abs(near - 5) < 0.3, `scale at focus ${near}`);   // d + 1
+});
+
+// A wide, deep story: 3 rows of 1, then rows of 6.
+const bigStory = (() => {
+    const nodes = [{ id: 'r', title: 'Root', text: 'x' }];
+    for (let i = 0; i < 6; i++) nodes.push({ id: `a${i}`, title: `Branch ${i}`, text: 'x', parent: 'r' });
+    for (let i = 0; i < 6; i++) nodes.push({ id: `b${i}`, title: `Further ${i}`, text: 'x', parent: `a${i}` });
+    for (let i = 0; i < 6; i++) nodes.push({ id: `c${i}`, title: `Deeper still ${i}`, text: 'x', parent: `b${i}` });
+    return loadStory({ title: 'Big', nodes }).story;
+})();
+
+test('fisheye fits the map in the frame, rows stay straight, and the focused node is biggest', () => {
+    const layout = layoutGraph(bigStory);
+    const b1 = layout.nodes.find(n => n.id === 'b1');
+    const placed = fisheyeLayout(layout, { width: 360, height: 300, focus: { x: b1.x + b1.w / 2, y: b1.y + b1.h / 2 } });
+    for (const box of placed.boxes.values()) {
+        assert.ok(box.x >= -0.01 && box.x + box.w <= 360.01 && box.y >= -0.01 && box.y + box.h <= 300.01, box.id);
+    }
+    const row = [0, 1, 2, 3, 4, 5].map(i => placed.boxes.get(`b${i}`));
+    assert.ok(row.every(b => Math.abs(b.y - row[0].y) < 0.01), 'a row stays level');
+    for (let i = 1; i < 6; i++) assert.ok(row[i].x >= row[i - 1].x + row[i - 1].w - 0.01, 'no overlap in a row');
+    const biggest = [...placed.boxes.values()].sort((a, b) => b.w * b.h - a.w * a.h)[0];
+    assert.equal(biggest.id, 'b1');
+    assert.ok(placed.boxes.get('b1').font > 11 && placed.boxes.get('b1').letters >= 14, 'readable at the focus');
+    assert.ok(placed.boxes.get('c5').font < placed.boxes.get('b1').font / 2, 'small far away');
+    assert.equal(placed.edges.length, layout.edges.length);
+    const e = placed.edges.find(x => x.from === 'b1');
+    assert.equal(e.y1, placed.boxes.get('b1').y + placed.boxes.get('b1').h);
+});
+
+test('a map that already fits is only centred, not distorted', () => {
+    const layout = layoutGraph(loadStory(tiny).story);
+    const placed = fisheyeLayout(layout, { width: layout.width + 100, height: layout.height + 40, focus: { x: 0, y: 0 } });
+    for (const n of layout.nodes) {
+        const p = placed.boxes.get(n.id);
+        assert.deepEqual([p.x, p.y, p.w, p.h], [n.x + 50, n.y + 20, n.w, n.h]);
+    }
+});
+
+test('zoom goes down to fitting the map and keeps the pinched point still', () => {
+    const range = zoomRange({ width: 1000, height: 600 }, 400, 600);
+    assert.deepEqual(range, { min: 0.4, max: 2.5 });
+    assert.deepEqual(zoomRange({ width: 200, height: 100 }, 400, 600), { min: 1, max: 2.5 });
+    assert.equal(clampZoom(9, range), 2.5);
+    assert.equal(clampZoom(0.1, range), 0.4);
+    const before = { zoom: 1, scrollLeft: 300, scrollTop: 100 };
+    const after = zoomAround(before, 2, 50, 80);
+    assert.equal((before.scrollLeft + 50) / 1, (after.scrollLeft + 50) / 2);
+    assert.equal((before.scrollTop + 80) / 1, (after.scrollTop + 80) / 2);
+    assert.deepEqual(zoomAround({ zoom: 1, scrollLeft: 0, scrollTop: 0 }, 0.5, 100, 100), { scrollLeft: 0, scrollTop: 0 });
+});
+
 section('speech and script');
 
 test('sentences split on end punctuation and newlines', () => {

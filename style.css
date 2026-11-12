@@ -180,11 +180,42 @@ button:disabled {
 
 /* --- Map --- */
 
+.map-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1rem;
+    margin-bottom: 0.6rem;
+}
+
+.map-bar .hint {
+    margin: 0;
+    flex: 1 1 14rem;
+    min-width: 0;
+}
+
+.map-switch {
+    margin: 0;
+    flex: none;
+}
+
 .map-scroll {
     overflow: auto;
     border: 1px solid var(--line);
     border-radius: 12px;
     background: var(--surface);
+    /* One finger scrolls; two pinch, which the page handles itself. */
+    touch-action: pan-x pan-y;
+}
+
+.map-scroll svg {
+    display: block;
+}
+
+/* Fisheye: the whole map in view, moved around by a finger or the mouse. */
+.map-scroll.fisheye {
+    overflow: hidden;
+    touch-action: none;
 }
 
 #map-svg .edge {
@@ -223,6 +254,10 @@ button:disabled {
 
 #map-svg .node {
     cursor: pointer;
+}
+
+#map-svg .node.tiny rect {
+    stroke-width: 1;
 }
 
 #map-svg .node:hover rect,

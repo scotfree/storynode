@@ -45,7 +45,8 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 - `src/voicelog.js`: entries and wording for the voice log popup.
 - `src/arc.js`: tracks a drag around the big button as a signed sweep, for the arc
   controls (Repeat, Restart, mode dial).
-- `src/layout.js`: map layout (rows by longest path, ordered by parents' positions).
+- `src/layout.js`: map layout (rows by longest path, ordered by parents' positions), the
+  Cartesian fisheye that fits it into a frame around a focus, and zoom arithmetic.
 - `src/script.js`: everything voice mode says.
 - `stories/index.json`: names of the built-in stories; `stories/lighthouse.json` is the sample.
 
@@ -107,6 +108,13 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   the voice page the status line lives in the bottom strip with what was heard, the mode
   dial carries its own label, and held it shows the other mode at the far side with two
   arrows. The map's svg is `map-svg`, not `map`, or the `#map` hash scrolls to it.
+- The map has two looks, remembered in `storynode_map`. Normal: the layout at a zoom,
+  scrolled natively (`touch-action: pan-x pan-y`), with pinch handled by the page from touch
+  events, Safari's gesture events and ctrl + wheel. Fisheye: each axis distorted on its own
+  around a focus that follows the mouse or a dragged finger; a map that already fits isn't
+  distorted. Node elements are built once per render and only moved afterwards, so a
+  gesture never replaces the element under the finger; clicks right after a pinch or drag
+  are swallowed.
 - A started story in voice mode holds a screen wake lock (the phone locking mid-page stops
   the reading), re-asked whenever the page becomes visible again, and released on leaving
   voice mode. On by default, with a switch in Voice settings.

@@ -31,7 +31,11 @@ built-in one.
 Three modes, sharing your place in the story:
 
 - **Map**: the whole story's shape, titles only. Click a page to edit it; the
-  edit form also has "Read from here".
+  edit form also has "Read from here". Two looks, switched at the top: Normal
+  scrolls, and zooms with a pinch, a trackpad pinch or ctrl + scroll. Fisheye
+  fits the whole story in the frame and magnifies around your finger (drag
+  across it) or the mouse, squeezing the rest towards the edges; rows stay
+  straight.
 - **Read**: a page of text with the choices as buttons.
 - **Voice**: one big button, made for a phone. Tap once and it reads the page
   and the choices. Then hold the button, say your answer, and let go. Holding

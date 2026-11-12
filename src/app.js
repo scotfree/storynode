@@ -4,7 +4,7 @@
 //   #voice — a big button: it reads the page and the choices, then listens
 
 import { loadStory, choicesOf, isEnding, addNode, editNode, connectNode, connectable, idFor } from './story.js';
-import { layoutGraph } from './layout.js';
+import { layoutGraph, fisheyeLayout, zoomRange, clampZoom, zoomAround } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices, sentences } from './speech.js';
 import { pageScript, choicesPrompt, fallbackScript, storySentences, voiceParts, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL, CONNECT_LABEL } from './script.js';
@@ -217,29 +217,52 @@ function render() {
 }
 
 // --- map ---
+//
+// Two ways to look at it. Normal: the map at its own size, scrolled, and
+// pinched (or ctrl-scrolled) to zoom. Fisheye: the whole map in the frame,
+// magnified around a point that follows a finger or the mouse. The nodes are
+// built once per render and then only moved, so a gesture never replaces the
+// element under a finger.
+
+const MAP_KEY = 'storynode_map';    // { look, zoom }
+const MAP_HINTS = {
+    normal: 'Pinch or ctrl-scroll to zoom. Tap a node to edit it, or to read from there.',
+    fisheye: 'Drag across the map, or move the mouse, to look closer. Tap a node to edit it.',
+};
+
+const map = {
+    look: 'normal', zoom: 1, layout: null, parts: null,
+    focus: null, focusNode: null, suppressClickUntil: 0, frame: 0,
+};
 
 // Typewriter letters are wide: 22 of them fill a map node.
 function shorten(title, max = 22) {
+    if (max < 2) return '';
     return title.length > max ? `${title.slice(0, max - 1)}…` : title;
+}
+
+const mapScroller = () => $('map-scroll');
+
+// The room the map has: the scroller's width, and the window below its top.
+function mapRoom() {
+    const scroller = mapScroller();
+    return {
+        width: Math.max(200, scroller.clientWidth),
+        height: Math.max(320, Math.round(window.innerHeight - scroller.getBoundingClientRect().top - 16)),
+    };
 }
 
 function renderMap() {
     const layout = layoutGraph(story);
+    map.layout = layout;
     const svg = $('map-svg');    // not "map": the #map hash would scroll the page to it
-    svg.setAttribute('viewBox', `0 0 ${layout.width} ${layout.height}`);
-    svg.setAttribute('width', layout.width);
-    svg.setAttribute('height', layout.height);
     const defs = svgEl('defs');
     const marker = svgEl('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
     marker.append(svgEl('path', { d: 'M0 0 L10 5 L0 10 z', class: 'arrow' }));
     defs.append(marker);
 
-    const edges = layout.edges.map(({ x1, y1, x2, y2 }) => {
-        const mid = (y1 + y2) / 2;
-        return svgEl('path', { class: 'edge', d: `M${x1} ${y1} C${x1} ${mid} ${x2} ${mid} ${x2} ${y2 - 2}`, 'marker-end': 'url(#arrow)' });
-    });
-
-    const nodes = layout.nodes.map((box) => {
+    const edges = layout.edges.map(edge => ({ edge, path: svgEl('path', { class: 'edge', 'marker-end': 'url(#arrow)' }) }));
+    const nodes = new Map(layout.nodes.map((box) => {
         const classes = ['node'];
         if (box.id === currentId) classes.push('current');
         else if (visited.has(box.id)) classes.push('visited');
@@ -247,24 +270,245 @@ function renderMap() {
         const g = svgEl('g', { class: classes.join(' '), tabindex: 0, role: 'button', 'aria-label': box.title });
         const title = svgEl('title');
         title.textContent = box.title;
-        const rect = svgEl('rect', { x: box.x, y: box.y, width: box.w, height: box.h });
-        const text = svgEl('text', { x: box.x + box.w / 2, y: box.y + box.h / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central' });
-        text.textContent = shorten(box.title);
+        const rect = svgEl('rect');
+        const text = svgEl('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
         g.append(title, rect, text);
         // Opens the node's edit form, which also offers to read from there.
         const open = () => openAddDialog('edit', box.id);
         g.addEventListener('click', open);
         g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(); });
-        return g;
+        // Moving through the nodes by keyboard moves the fisheye with them.
+        g.addEventListener('focus', () => {
+            if (map.look !== 'fisheye') return;
+            map.focus = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+            placeMap();
+        });
+        return [box.id, { g, rect, text, box }];
+    }));
+    map.parts = { edges, nodes };
+    svg.replaceChildren(defs, ...edges.map(e => e.path), ...[...nodes.values()].map(n => n.g));
+
+    // The fisheye starts on the current node, and stays where it's been moved
+    // until the reader goes somewhere else.
+    if (map.focusNode !== currentId || !map.focus) {
+        const current = layout.nodes.find(b => b.id === currentId) ?? layout.nodes[0];
+        map.focus = current ? { x: current.x + current.w / 2, y: current.y + current.h / 2 } : { x: 0, y: 0 };
+        map.focusNode = currentId;
+    }
+    placeMap({ centre: true });
+}
+
+const edgePath = ({ x1, y1, x2, y2 }) => {
+    const mid = (y1 + y2) / 2;
+    return `M${x1} ${y1} C${x1} ${mid} ${x2} ${mid} ${x2} ${y2 - 2}`;
+};
+
+// Puts every node and edge where the current look says.
+function placeMap({ centre = false } = {}) {
+    const { layout, parts } = map;
+    if (!layout || !parts) return;
+    const svg = $('map-svg');
+    const scroller = mapScroller();
+    scroller.classList.toggle('fisheye', map.look === 'fisheye');
+    $('map-hint').textContent = MAP_HINTS[map.look];
+
+    if (map.look === 'fisheye') {
+        const { width, height } = mapRoom();
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        svg.setAttribute('width', width);
+        svg.setAttribute('height', height);
+        const placed = fisheyeLayout(layout, { width, height, focus: map.focus });
+        for (const { g, rect, text, box } of parts.nodes.values()) {
+            const p = placed.boxes.get(box.id);
+            setAttrs(rect, { x: p.x, y: p.y, width: p.w, height: p.h });
+            setAttrs(text, { x: p.x + p.w / 2, y: p.y + p.h / 2 });
+            text.style.fontSize = `${p.font}px`;
+            text.style.visibility = p.font < 6 ? 'hidden' : '';
+            text.textContent = shorten(box.title, p.letters);
+            rect.style.rx = `${Math.min(10, p.h / 4)}px`;
+            g.classList.toggle('tiny', p.font < 6);
+        }
+        for (const { edge, path } of parts.edges) {
+            const e = placed.edges.find(x => x.from === edge.from && x.to === edge.to);
+            path.setAttribute('d', edgePath(e));
+        }
+        return;
+    }
+
+    // Normal: the layout's own coordinates, drawn at the zoom.
+    for (const { g, rect, text, box } of parts.nodes.values()) {
+        setAttrs(rect, { x: box.x, y: box.y, width: box.w, height: box.h });
+        setAttrs(text, { x: box.x + box.w / 2, y: box.y + box.h / 2 });
+        text.style.fontSize = '';
+        text.style.visibility = '';
+        text.textContent = shorten(box.title);
+        rect.style.rx = '';
+        g.classList.remove('tiny');
+    }
+    for (const { edge, path } of parts.edges) path.setAttribute('d', edgePath(edge));
+    svg.setAttribute('viewBox', `0 0 ${layout.width} ${layout.height}`);
+    const room = mapRoom();
+    map.zoom = clampZoom(map.zoom, zoomRange(layout, room.width, room.height));
+    sizeMap();
+    if (centre) {
+        // Keep the current node in view.
+        const current = layout.nodes.find(b => b.id === currentId);
+        if (current) scroller.scrollLeft = Math.max(0, (current.x + current.w / 2) * map.zoom - scroller.clientWidth / 2);
+    }
+}
+
+function setAttrs(node, attrs) {
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, Math.round(v * 10) / 10);
+}
+
+function sizeMap() {
+    const svg = $('map-svg');
+    svg.setAttribute('width', Math.round(map.layout.width * map.zoom));
+    svg.setAttribute('height', Math.round(map.layout.height * map.zoom));
+}
+
+// Zooms the normal map to `next`, keeping the point at (x, y) in the
+// scroller's viewport where it is.
+function zoomMapTo(next, x, y) {
+    const scroller = mapScroller();
+    const room = mapRoom();
+    const range = zoomRange(map.layout, room.width, room.height);
+    const zoom = clampZoom(next, range);
+    if (zoom === map.zoom) return;
+    const scroll = zoomAround({ zoom: map.zoom, scrollLeft: scroller.scrollLeft, scrollTop: scroller.scrollTop }, zoom, x, y);
+    map.zoom = zoom;
+    sizeMap();
+    scroller.scrollLeft = scroll.scrollLeft;
+    scroller.scrollTop = scroll.scrollTop;
+}
+
+function saveMapSettings() {
+    writeJson(MAP_KEY, { look: map.look, zoom: map.zoom });
+}
+
+function setUpMap() {
+    const saved = readJson(MAP_KEY) ?? {};
+    map.look = saved.look === 'fisheye' ? 'fisheye' : 'normal';
+    map.zoom = Number(saved.zoom) > 0 ? Number(saved.zoom) : 1;
+    document.querySelector(`#map-look input[value="${map.look}"]`).checked = true;
+    $('map-look').addEventListener('change', (e) => {
+        map.look = e.target.value;
+        saveMapSettings();
+        placeMap({ centre: true });
     });
 
-    svg.replaceChildren(defs, ...edges, ...nodes);
-    // Keep the current node in view.
-    const current = layout.nodes.find(b => b.id === currentId);
-    if (current) {
-        const scroller = svg.parentElement;
-        scroller.scrollLeft = Math.max(0, current.x + current.w / 2 - scroller.clientWidth / 2);
-    }
+    const scroller = mapScroller();
+    const svg = $('map-svg');
+    const local = (clientX, clientY) => {
+        const r = scroller.getBoundingClientRect();
+        return { x: clientX - r.left - scroller.clientLeft, y: clientY - r.top - scroller.clientTop };
+    };
+    const quietClicks = (ms = 400) => { map.suppressClickUntil = performance.now() + ms; };
+    // A pinch or a drag ends with the finger lifted over some node: not a tap.
+    svg.addEventListener('click', (e) => {
+        if (performance.now() < map.suppressClickUntil) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    }, true);
+
+    // Pinch, on touch screens. One finger is left to the browser to scroll.
+    let pinch = null;
+    const spread = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const middle = (t) => local((t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
+    scroller.addEventListener('touchstart', (e) => {
+        if (map.look !== 'normal' || e.touches.length !== 2) return;
+        pinch = { distance: spread(e.touches), zoom: map.zoom };
+        quietClicks();
+    }, { passive: true });
+    scroller.addEventListener('touchmove', (e) => {
+        if (!pinch || e.touches.length !== 2) return;
+        e.preventDefault();
+        const at = middle(e.touches);
+        zoomMapTo(pinch.zoom * spread(e.touches) / pinch.distance, at.x, at.y);
+        quietClicks();
+    }, { passive: false });
+    const endPinch = (e) => {
+        if (!pinch || e.touches.length >= 2) return;
+        pinch = null;
+        quietClicks();
+        saveMapSettings();
+    };
+    scroller.addEventListener('touchend', endPinch);
+    scroller.addEventListener('touchcancel', endPinch);
+
+    // Safari's own pinch: stop it zooming the page, and use it on a Mac trackpad.
+    let gesture = null;
+    scroller.addEventListener('gesturestart', (e) => {
+        e.preventDefault();
+        if (map.look === 'normal' && !pinch) gesture = { zoom: map.zoom };
+    });
+    scroller.addEventListener('gesturechange', (e) => {
+        e.preventDefault();
+        if (!gesture || pinch) return;
+        const at = local(e.clientX, e.clientY);
+        zoomMapTo(gesture.zoom * e.scale, at.x, at.y);
+    });
+    scroller.addEventListener('gestureend', (e) => {
+        e.preventDefault();
+        if (gesture) saveMapSettings();
+        gesture = null;
+    });
+
+    // Trackpad pinch in other browsers, and ctrl + mouse wheel.
+    let wheelSave = 0;
+    scroller.addEventListener('wheel', (e) => {
+        if (map.look !== 'normal' || !e.ctrlKey) return;
+        e.preventDefault();
+        const at = local(e.clientX, e.clientY);
+        zoomMapTo(map.zoom * Math.exp(-e.deltaY * 0.01), at.x, at.y);
+        clearTimeout(wheelSave);
+        wheelSave = setTimeout(saveMapSettings, 300);
+    }, { passive: false });
+
+    // Fisheye: the focus follows the mouse, or a finger dragged across the map.
+    let drag = null;
+    const moveFocus = (clientX, clientY) => {
+        const placed = { width: Number(svg.getAttribute('width')), height: Number(svg.getAttribute('height')) };
+        const at = local(clientX, clientY);
+        // The focus is a fixed point of the fisheye, so screen to layout is
+        // just the fit: undo the scale and the centring offset.
+        const along = (v, size, space) => {
+            const scale = Math.min(1, space / size);
+            return (v - (space - size * scale) / 2) / scale;
+        };
+        map.focus = {
+            x: Math.min(map.layout.width, Math.max(0, along(at.x, map.layout.width, placed.width))),
+            y: Math.min(map.layout.height, Math.max(0, along(at.y, map.layout.height, placed.height))),
+        };
+        if (map.frame) return;
+        map.frame = requestAnimationFrame(() => {
+            map.frame = 0;
+            placeMap();
+        });
+    };
+    svg.addEventListener('pointerdown', (e) => {
+        if (map.look !== 'fisheye' || e.pointerType === 'mouse') return;
+        drag = { x: e.clientX, y: e.clientY, moved: false };
+    });
+    svg.addEventListener('pointermove', (e) => {
+        if (map.look !== 'fisheye') return;
+        if (e.pointerType === 'mouse') {
+            moveFocus(e.clientX, e.clientY);
+            return;
+        }
+        if (!drag) return;
+        if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) drag.moved = true;
+        if (drag.moved) moveFocus(e.clientX, e.clientY);
+    });
+    const endDrag = () => {
+        if (drag?.moved) quietClicks(300);
+        drag = null;
+    };
+    svg.addEventListener('pointerup', endDrag);
+    svg.addEventListener('pointercancel', endDrag);
+
+    window.addEventListener('resize', () => { if (mode() === 'map') placeMap(); });
 }
 
 // --- read ---
@@ -1555,6 +1799,7 @@ async function boot() {
     setUpVoiceSettings();
     setUpStoryDialog();
     setUpAddDialog();
+    setUpMap();
     setUpTalkButton();
     setUpArcControls();
     setUpVoiceLog();

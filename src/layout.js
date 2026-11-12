@@ -70,3 +70,76 @@ export function layoutGraph(story, { nodeWidth = 180, nodeHeight = 48, gapX = 28
 
     return { nodes, edges, width, height };
 }
+
+// --- fisheye ---
+//
+// A Cartesian fisheye spreads the map across a fixed area and magnifies it
+// around a focus point, squeezing everything else towards the edges. Each axis
+// is distorted on its own, so rows stay straight and columns stay upright.
+
+// One axis: moves v (between lo and hi) away from `focus` by distortion d.
+// lo, hi and focus stay where they are; the scale at the focus is d + 1.
+export function fisheyeAxis(v, focus, lo, hi, d) {
+    if (d <= 0 || v === focus) return v;
+    const edge = v > focus ? hi : lo;
+    const span = edge - focus;
+    if (span === 0) return v;
+    const t = (v - focus) / span;           // 0 at the focus, 1 at the edge
+    return focus + span * ((d + 1) * t) / (d * t + 1);
+}
+
+// Fits `layout` into width × height and distorts it around `focus` (a point in
+// layout coordinates). A map that already fits isn't distorted. Otherwise the
+// magnification at the focus is set so the box there is about `focusScale`
+// times its normal size. Returns boxes and edges in screen pixels, with the
+// font size and the number of title letters that fit each box.
+export function fisheyeLayout(layout, { width, height, focus, focusScale = 1.1, font = 12.5, letterWidth = 0.62 }) {
+    const box0 = layout.nodes[0] ?? { w: 1, h: 1 };
+    const axis = (size, space, at) => {
+        const scale = Math.min(1, space / size);
+        const offset = (space - size * scale) / 2;
+        const d = scale >= 1 ? 0 : Math.min(8, Math.max(0, focusScale / scale - 1));
+        const lo = offset;
+        const hi = offset + size * scale;
+        const f = Math.min(hi, Math.max(lo, offset + at * scale));
+        return (v) => fisheyeAxis(offset + v * scale, f, lo, hi, d);
+    };
+    const fx = axis(layout.width, width, focus.x);
+    const fy = axis(layout.height, height, focus.y);
+
+    const boxes = new Map();
+    for (const n of layout.nodes) {
+        const x = fx(n.x);
+        const y = fy(n.y);
+        const w = fx(n.x + n.w) - x;
+        const h = fy(n.y + n.h) - y;
+        const size = font * Math.min(h / n.h, (w / n.w) * 1.4);
+        boxes.set(n.id, { id: n.id, x, y, w, h, font: size, letters: Math.max(0, Math.floor((w - 10) / (size * letterWidth))) });
+    }
+    const edges = layout.edges.map(({ from, to }) => {
+        const a = boxes.get(from);
+        const b = boxes.get(to);
+        return { from, to, x1: a.x + a.w / 2, y1: a.y + a.h, x2: b.x + b.w / 2, y2: b.y };
+    });
+    return { boxes, edges, width, height };
+}
+
+// --- zoom ---
+
+// The zoom range for a map in a viewport: down to fitting it whole (never
+// above actual size), up to a fixed maximum.
+export function zoomRange(layout, viewWidth, viewHeight, max = 2.5) {
+    const fit = Math.min(viewWidth / layout.width, viewHeight / layout.height);
+    return { min: Math.min(1, fit), max };
+}
+
+export const clampZoom = (zoom, { min, max }) => Math.min(max, Math.max(min, zoom));
+
+// Scroll position after zooming from `zoom` to `next` so that the content under
+// (x, y), measured from the viewport's top left, stays under it.
+export function zoomAround({ zoom, scrollLeft, scrollTop }, next, x, y) {
+    return {
+        scrollLeft: Math.max(0, ((scrollLeft + x) / zoom) * next - x),
+        scrollTop: Math.max(0, ((scrollTop + y) / zoom) * next - y),
+    };
+}
