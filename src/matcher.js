@@ -18,6 +18,8 @@ export const COMMANDS = {
         'new note', 'add new page', 'add a new page', 'add a node', 'add a note'],
     edit: ['edit this node', 'edit node', 'edit this note', 'edit note', 'edit this page', 'edit page', 'edit this',
         'edit', 'change this node', 'change this page'],
+    connect: ['connect node', 'connect a node', 'connect this node', 'connect note', 'connect a note', 'connect this note',
+        'connect page', 'connect a page', 'connect this page', 'connect', 'link node', 'link a node', 'link this node'],
     story: ['add new story', 'add a new story', 'add story', 'new story', 'create new story', 'create a new story',
         'create a story', 'start a new story', 'write a new story'],
     stop: ['stop', 'pause', 'quiet', 'be quiet', 'stop listening', 'goodbye'],

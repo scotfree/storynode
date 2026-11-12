@@ -141,3 +141,41 @@ export function editNode(data, id, { title, text }) {
         errors,
     };
 }
+
+// The nodes a node could be connected to as a new choice: not itself, not
+// already a choice there, and not anything on the way to it (the story must
+// only go forward). `story` is a loaded story. In story order.
+export function connectable(story, id) {
+    if (!story.byId.has(id)) return [];
+    const before = new Set([id]);
+    const walk = (at) => {
+        for (const parent of story.byId.get(at)?.parents ?? []) {
+            if (before.has(parent)) continue;
+            before.add(parent);
+            walk(parent);
+        }
+    };
+    walk(id);
+    const already = new Set(story.children.get(id) ?? []);
+    return [...story.byId.values()].filter(n => !before.has(n.id) && !already.has(n.id));
+}
+
+// Makes `to` a choice at `from` by adding `from` to its parents, in story
+// data. Nothing else about either node changes. Returns { data, errors }.
+export function connectNode(data, from, to) {
+    const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
+    const target = nodes.find(n => n?.id === to);
+    const errors = [];
+    if (!nodes.some(n => n?.id === from)) errors.push(`The node "${from}" doesn't exist.`);
+    if (!target) errors.push(`The node "${to}" doesn't exist.`);
+    if (errors.length) return { data, errors };
+    if (from === to) return { data, errors: ["A page can't lead to itself."] };
+    if (parentsOf(target).includes(from)) return { data, errors: ['That page is already a choice here.'] };
+    const next = { ...data, nodes: nodes.map(n => (n === target ? { ...n, parent: [...parentsOf(n), from] } : n)) };
+    const problems = loadStory(next).errors;
+    if (problems.length) {
+        const loops = problems.some(p => /loops back|No start node/.test(p));
+        return { data, errors: loops ? ['That page comes before this one, and the story must only go forward.'] : problems };
+    }
+    return { data: next, errors };
+}

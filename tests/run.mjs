@@ -1,7 +1,7 @@
 // Unit tests for the pure modules. Run: node tests/run.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { loadStory, choicesOf, isEnding, parentsOf, addNode, editNode, idFor } from '../src/story.js';
+import { loadStory, choicesOf, isEnding, parentsOf, addNode, editNode, connectNode, connectable, idFor } from '../src/story.js';
 import { match, numberFrom, commandFrom, titleHits, hintPhrases, normalize } from '../src/matcher.js';
 import { layoutGraph } from '../src/layout.js';
 import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from '../src/speech.js';
@@ -11,6 +11,7 @@ import { angleAt, createSweep } from '../src/arc.js';
 import { createClipSpeaker } from '../src/clipspeaker.js';
 import { createModelVoice, modelNote, loadProgress, clipStats, timingNote } from '../src/modelvoice.js';
 import { createCloudVoice, pcm16ToFloat32, costNote, cloudError, cloudNote, CLOUD } from '../src/cloudvoice.js';
+import { startConnect, connectStep, connectPrompt, findPage } from '../src/connect.js';
 import { createStory, listStories, overviewOf } from '../src/library.js';
 import { startCompose, composeStep, composePrompt, composeBrief, promptKey, composeHints, composedText, tidyTitle, tidyChunk } from '../src/compose.js';
 
@@ -1281,6 +1282,115 @@ test('cancelling an edit changes nothing', () => {
     assert.equal(redo('cancel').outcome, 'cancel');
     assert.equal(redo('cancel').say, 'Okay, nothing changed.');
     assert.equal(redo('keep it', 'cancel').outcome, 'cancel');
+});
+
+section('connecting a node');
+
+// start ─ beach ─ cave ─ deep
+//       └ woods ─ hut
+const paths = {
+    title: 'Paths',
+    nodes: [
+        { id: 'start', title: 'Paths', text: 'Begin.' },
+        { id: 'beach', title: 'Walk down to the beach', text: 'Sand.', parent: 'start' },
+        { id: 'cave', title: 'Explore the sea cave', text: 'Dark.', parent: 'beach' },
+        { id: 'deep', title: 'Go deeper', text: 'Darker.', parent: 'cave' },
+        { id: 'woods', title: 'Follow the forest path', text: 'Trees.', parent: 'start' },
+        { id: 'hut', title: 'Find the keeper\'s hut', text: 'A hut.', parent: 'woods' },
+    ],
+};
+const pathsStory = loadStory(paths).story;
+const titlesFor = (id) => connectable(pathsStory, id).map(n => n.id);
+
+test('a node can connect to any page that is not itself, a choice already, or behind it', () => {
+    assert.deepEqual(titlesFor('cave'), ['woods', 'hut']);          // not start, beach (behind), cave (itself), deep (already)
+    assert.deepEqual(titlesFor('start'), ['cave', 'deep', 'hut']);  // beach and woods are choices already
+    assert.deepEqual(titlesFor('hut'), ['beach', 'cave', 'deep']);
+    assert.deepEqual(connectable(pathsStory, 'nope'), []);
+});
+
+test('connecting adds this page to the other one\'s parents, and it becomes a choice here', () => {
+    const { data, errors } = connectNode(paths, 'hut', 'cave');
+    assert.deepEqual(errors, []);
+    assert.deepEqual(data.nodes.find(n => n.id === 'cave').parent, ['beach', 'hut']);
+    assert.equal(paths.nodes[2].parent, 'beach');                   // the original is untouched
+    const { story, errors: loadErrors } = loadStory(data);
+    assert.deepEqual(loadErrors, []);
+    assert.deepEqual(choicesOf(story, 'hut').map(n => n.title), ['Explore the sea cave']);
+    assert.deepEqual(choicesOf(story, 'beach').map(n => n.id), ['cave']);
+    // Every page the list offers really can be connected.
+    for (const from of pathsStory.byId.keys()) {
+        for (const to of titlesFor(from)) assert.deepEqual(connectNode(paths, from, to).errors, [], `${from} → ${to}`);
+    }
+});
+
+test('refuses a loop, a repeat, itself, or a page that is not there', () => {
+    assert.match(connectNode(paths, 'cave', 'start').errors[0], /only go forward/);
+    assert.match(connectNode(paths, 'deep', 'beach').errors[0], /only go forward/);
+    assert.match(connectNode(paths, 'beach', 'cave').errors[0], /already a choice/);
+    assert.match(connectNode(paths, 'cave', 'cave').errors[0], /itself/);
+    assert.equal(connectNode(paths, 'cave', 'nope').errors.length, 1);
+    assert.equal(connectNode(paths, 'cave', 'start').data, paths);
+});
+
+const fromCave = () => startConnect(connectable(pathsStory, 'cave').map(({ id, title }) => ({ id, title })));
+
+test('"connect node" is a command, never read with the choices', () => {
+    for (const said of ['connect node', 'Connect note.', 'connect a node please', 'connect']) assert.equal(commandFrom(said), 'connect', said);
+    assert.doesNotMatch(choicesScript([{ id: 'b', title: 'Go left' }, { id: 'c', title: 'Go right' }]), /connect/i);
+    assert.match(HELP_SCRIPT, /connect node/);
+});
+
+test('finds the page by its title, like choosing', () => {
+    const start = connectPrompt(fromCave());
+    assert.match(start.say, /Say its title/);
+    assert.deepEqual([start.key, start.brief], ['connect', 'Connect to?']);
+    for (const said of ['Follow the forest path', 'the forest', 'um the forrest path please']) {
+        const step = connectStep(fromCave(), [said]);
+        assert.deepEqual([step.outcome, step.id, step.say], ['connect', 'woods', 'Connected: Follow the forest path.'], said);
+    }
+    assert.equal(connectStep(fromCave(), ['the fourth past', 'the keepers hut']).id, 'hut');     // a later guess
+    assert.equal(findPage('two', fromCave().candidates), null);     // numbers mean nothing until the list is read
+});
+
+test('not found: says so and asks again, then reads the titles and takes a number', () => {
+    let step = connectStep(fromCave(), ['the lighthouse stairs']);
+    assert.equal(step.outcome, 'continue');
+    assert.equal(step.say, "I couldn't find a page called the lighthouse stairs. Try again.");
+    step = connectStep(step.state, ['purple monkey']);
+    assert.equal(step.say, "I couldn't find a page called purple monkey. Here are the pages you can connect to.\nOne: Follow the forest path.\nTwo: Find the keeper's hut.\nSay a title, or its number.");
+    assert.equal(step.state.listed, true);
+    assert.deepEqual([connectStep(step.state, ['two']).outcome, connectStep(step.state, ['two']).id], ['connect', 'hut']);
+    assert.equal(connectStep(step.state, ['the forest path']).id, 'woods');
+    const again = connectStep(step.state, ['banana']);
+    assert.match(again.say, /Say a title, or its number, or say cancel/);
+    assert.equal(again.outcome, 'continue');
+});
+
+test('"list" reads the titles straight away; cancel and silence do what they say', () => {
+    const listed = connectStep(fromCave(), ['list']);
+    assert.match(listed.say, /^One: Follow the forest path\./);
+    assert.equal(listed.state.listed, true);
+    assert.equal(listed.state.misses, 0);
+    assert.deepEqual([connectStep(fromCave(), ['never mind']).outcome, connectStep(fromCave(), ['cancel']).say], ['cancel', 'Okay, nothing connected.']);
+    const quiet = connectStep(fromCave(), []);
+    assert.match(quiet.say, /didn't hear a title/);
+    assert.equal(quiet.state.misses, 0);                            // silence isn't a wrong title
+    assert.deepEqual([connectStep(fromCave(), ['the path or the hut']).outcome], ['continue']);   // could be either
+});
+
+test('with nothing to connect to, it says so and stops', () => {
+    const none = connectPrompt(startConnect([]));
+    assert.equal(none.outcome, 'cancel');
+    assert.match(none.say, /no other page/);
+});
+
+test('the title it found is read in the story voice', () => {
+    const { candidates } = fromCave();
+    const story = storySentences(candidates.map(c => c.title), sentences);
+    assert.deepEqual(voiceParts('Connected: Follow the forest path.', story), [
+        { text: 'Connected:', role: 'app' }, { text: 'Follow the forest path.', role: 'story' },
+    ]);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

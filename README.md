@@ -56,6 +56,15 @@ with the new choice read out among the others.
  It's saved with the story in this
 browser only.
 
+**Connecting a node**: "connect node", beside "add new node", makes a page that
+already exists a choice on the page you're on, as if it had been written from
+there. The link shows the pages it could be; pick one. In Voice, say "connect
+node" and then the page's title. If it can't find that title it says so and
+asks again; after a second miss it reads out the titles and takes a title or a
+number ("list" gets you there straight away). Pages that lead to the current
+one aren't offered, since a story can't loop. There's no way to undo a
+connection in the app yet.
+
 **Editing a node**: next to "Add new node" is "Edit this node", and every node
 on the Map opens the same form: the creation form with the node's title and
 text already in it. In Voice, say "edit this node" and it asks the same

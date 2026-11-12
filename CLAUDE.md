@@ -20,7 +20,8 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 - `src/story.js`: the story model. Nodes have `id`, `title`, `text`, `parent` (string or
   list) and optional `aliases`; choices are the children. Validates ids, parents, loops.
   `addNode` appends a node under a parent in the JSON form, making its id from the title;
-  `editNode` changes a node's title and text and keeps its id.
+  `editNode` changes a node's title and text and keeps its id. `connectNode` adds a parent
+  to an existing node; `connectable` lists the nodes that wouldn't make a loop.
 - `src/matcher.js`: turns recognizer guesses into a choice (number, title/alias) or a
   command. Picks a title only when it clearly wins on words no other choice has;
   otherwise returns `none` so the app asks again. Sound-alikes ("choice to" → 2) only
@@ -39,6 +40,8 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 - `src/library.js`: the list of stories (built-in plus this browser's) and `createStory`.
 - `src/compose.js`: the spoken conversation for dictating a new node or story (title → read back →
   text in parts until "done" → read back → save), as a pure step function.
+- `src/connect.js`: the spoken exchange for connecting to an existing node (ask for a title,
+  two misses, then read the list), as a pure step function.
 - `src/voicelog.js`: entries and wording for the voice log popup.
 - `src/arc.js`: tracks a drag around the big button as a signed sweep, for the arc
   controls (Repeat, Restart, mode dial).
@@ -67,6 +70,11 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   'edit' (where "keep it" at a question leaves that part unchanged). Map nodes open the
   edit form, which carries "Read from here" so the map still navigates. Ids never change
   on edit, so saved places and links between nodes hold.
+- "Connect node" makes an existing node a choice here by adding the current node to its
+  `parent` list; that's the whole change. Candidates exclude the node, its choices and
+  everything upstream of it. By voice the title is matched like a choice (unique words, or
+  the exact title), numbers only count once the list has been read out, and the match is
+  applied without a read-back, as asked; there is no disconnect yet.
 - Several stories: built-ins are fetched from `stories/` via `index.json` (a static page
   can't list a folder); anything made, opened or added to in the browser lives in
   localStorage under `storynode_library`, keyed by story id, and a built-in's id there

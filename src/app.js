@@ -3,13 +3,14 @@
 //   #read  — a page of text, with the choices as buttons
 //   #voice — a big button: it reads the page and the choices, then listens
 
-import { loadStory, choicesOf, isEnding, addNode, editNode, idFor } from './story.js';
+import { loadStory, choicesOf, isEnding, addNode, editNode, connectNode, connectable, idFor } from './story.js';
 import { layoutGraph } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices, sentences } from './speech.js';
-import { pageScript, choicesPrompt, fallbackScript, storySentences, voiceParts, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL } from './script.js';
+import { pageScript, choicesPrompt, fallbackScript, storySentences, voiceParts, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL, CONNECT_LABEL } from './script.js';
 import { createLog, formatEntry, matchLines } from './voicelog.js';
 import { createSweep } from './arc.js';
+import { startConnect, connectStep, connectPrompt, connectStatus } from './connect.js';
 import { createClipSpeaker } from './clipspeaker.js';
 import { createModelVoice, modelNote, loadProgress, timingNote, MODEL_SIZES, MODEL_VOICES } from './modelvoice.js';
 import { createPlayer } from './player.js';
@@ -167,6 +168,7 @@ function renderPicker() {
 function pickStory(id) {
     stopVoice();
     voice.compose = null;
+    voice.connect = null;
     const errors = openStory(id);
     if (errors.length) {
         renderPicker();
@@ -307,6 +309,7 @@ const voice = {
     handsFree: false, stage: 'page', resume: null,
     compose: null,     // { parent, state } while a new node is being dictated
     fallback: null,    // the full prompt, while a brief one is waiting for an answer
+    connect: null,     // { from, state } while a page to connect to is being asked for
 };
 const voiceLog = createLog();
 
@@ -421,6 +424,7 @@ function storyWordsNow() {
     const words = [n.title, n.text, ...choices().map(c => c.title)];
     const composing = voice.compose?.state;
     if (composing) words.push(composing.title, ...composing.chunks, composing.original?.title, composing.original?.text);
+    if (voice.connect) words.push(...voice.connect.state.candidates.map(c => c.title));
     return storySentences(words.filter(Boolean), sentences);
 }
 
@@ -448,7 +452,7 @@ function showMakingVoice(making) {
 // The model is slow, so while the listener decides, it gets a start on what
 // each choice would read first: all the titles, then the opening sentences.
 function warmChoices() {
-    if (speaker !== modelSpeaker || voice.compose) return;
+    if (speaker !== modelSpeaker || voice.compose || voice.connect) return;
     const openings = choices().map(c => sentences(pageScript(c)).slice(0, 3));
     const rate = Number($('voice-rate').value);
     for (let i = 0; i < 3; i++) modelVoice.warm(openings.map(o => o[i]).filter(Boolean), { rate });
@@ -483,7 +487,8 @@ function forgetHeardPrompts() {
 // After speaking: hands-free opens the mic, Hold To Talk waits for a press.
 function awaitAnswer(run) {
     warmChoices();
-    const idle = () => setVoiceState('idle', voice.compose ? `${composeStatus(voice.compose.state)} Hold the button to answer.` : 'Hold the button to answer.');
+    const doing = voice.compose ? `${composeStatus(voice.compose.state)} ` : voice.connect ? `${connectStatus(voice.connect.state)} ` : '';
+    const idle = () => setVoiceState('idle', `${doing}Hold the button to answer.`);
     if (handsFree()) {
         listen(run);
         return;
@@ -507,6 +512,7 @@ async function voiceLoop(run, { skipPage = false, from = null } = {}) {
     voice.retries = 0;
     voice.resume = null;
     voice.compose = null;      // back in the story
+    voice.connect = null;
     const stage = from?.stage ?? (skipPage ? 'choices' : 'page');
     if (stage === 'page') {
         voice.stage = 'page';
@@ -585,6 +591,7 @@ async function hear(run, { hold, phrases, label }) {
 
 async function listen(run, { hold = false } = {}) {
     if (voice.compose) return composeListen(run, { hold });
+    if (voice.connect) return connectListen(run, { hold });
     const list = choices();
     const alternatives = await hear(run, {
         hold,
@@ -652,6 +659,8 @@ async function command(name, run) {
             return startComposing(run, 'story');
         case 'edit':
             return startComposing(run, 'edit');
+        case 'connect':
+            return startConnecting(run);
         case 'help':
             forgetHeardPrompts();   // asking for help brings the full prompts back
             if (!(await say(HELP_SCRIPT, run))) return;
@@ -705,6 +714,11 @@ function onTalkTap() {
     if (voice.compose) {
         voice.retries = 0;
         composeSay({ say: composePrompt(voice.compose.state) }, run);
+        return;
+    }
+    if (voice.connect) {
+        voice.retries = 0;
+        connectSay({ ...connectPrompt(voice.connect.state), key: null }, run);
         return;
     }
     const from = voice.resume?.id === currentId ? voice.resume : null;
@@ -1156,6 +1170,7 @@ function openAddDialog(kind = 'node', id = currentId) {
     if (!story && kind !== 'story') return;
     stopVoice();
     voice.compose = null;
+    voice.connect = null;
     setVoiceState('idle', voice.started ? '' : startHint());
     adding = kind;
     editingId = kind === 'edit' ? id : null;
@@ -1268,7 +1283,125 @@ async function composeListen(run, { hold = false } = {}) {
     return composeSay(step, run);
 }
 
+// --- connecting to a node that already exists ---
+//
+// Like adding a node, but the new choice leads to a page the story already
+// has. Picked from a list (the link under the choices), or named out loud in
+// voice mode ("connect node").
+
+function saveConnection(from, to) {
+    const { data, errors } = connectNode(storyData, from, to);
+    if (errors.length) return errors;
+    storyData = data;
+    story = loadStory(data).story;
+    local[storyId] = data;
+    saveLibrary();
+    render();
+    return [];
+}
+
+function openConnectDialog() {
+    if (!story) return;
+    stopVoice();
+    voice.compose = null;
+    voice.connect = null;
+    setVoiceState('idle', voice.started ? '' : startHint());
+    const from = currentId;
+    const pages = connectable(story, from);
+    const list = $('connect-list');
+    const fill = () => {
+        const wanted = $('connect-filter').value.trim().toLowerCase();
+        list.replaceChildren(...pages.filter(p => p.title.toLowerCase().includes(wanted)).map((page) => {
+            const li = el('li');
+            const b = el('button', { type: 'button' }, page.title);
+            b.addEventListener('click', () => {
+                const errors = saveConnection(from, page.id);
+                if (errors.length) {
+                    $('connect-errors').textContent = errors.join('\n');
+                    $('connect-errors').hidden = false;
+                    return;
+                }
+                $('connect-dialog').close();
+                // The pick is a tap, so voice mode can read the choices with the new one in.
+                if (mode() === 'voice' && voice.started) voiceLoop(voice.run, { skipPage: true });
+            });
+            li.append(b);
+            return li;
+        }));
+    };
+    $('connect-heading').textContent = CONNECT_LABEL;
+    $('connect-hint').replaceChildren(...(pages.length
+        ? ['Pick a page to add as a choice after ', el('strong', {}, node().title), '.']
+        : ["There's no other page this one can connect to yet. Pages that lead here can't be choices, or the story would loop."]));
+    $('connect-filter').value = '';
+    $('connect-filter').hidden = pages.length < 8;
+    $('connect-filter').oninput = fill;
+    $('connect-errors').hidden = true;
+    fill();
+    $('connect-dialog').showModal();
+}
+
+// By voice. Like dictation, `voice.connect` outlives a run, so a press or
+// STOP in the middle carries on; going anywhere else in the story drops it.
+
+function startConnecting(run) {
+    voice.connect = { from: currentId, state: startConnect(connectable(story, currentId).map(({ id, title }) => ({ id, title }))) };
+    voice.retries = 0;
+    addLog('compose', `connecting from ${currentId}`);
+    return connectSay(connectPrompt(voice.connect.state), run);
+}
+
+// Says a line of it ({ say, key, brief, outcome } from connect.js) and waits
+// for the answer, or finishes: back to this page's choices either way.
+async function connectSay({ say: full, key = null, brief = null, outcome = 'continue', id = null }, run) {
+    const connecting = voice.connect;
+    let line = full;
+    if (outcome === 'connect') {
+        const errors = saveConnection(connecting.from, id);
+        if (errors.length) line = `Sorry, that couldn't be connected. ${errors[0]}`;
+    }
+    setVoiceState('reading', connectStatus(connecting.state));
+    if (outcome !== 'continue') {
+        // Still set while speaking, so the title is read in the story voice.
+        const said = await say(line, run);
+        if (voice.connect === connecting) voice.connect = null;
+        if (said) voiceLoop(run, { skipPage: true });
+        return;
+    }
+    if (!(await sayPrompt({ key, full: line, brief }, run))) return;
+    awaitAnswer(run);
+}
+
+async function connectListen(run, { hold = false } = {}) {
+    const connecting = voice.connect;
+    const { candidates } = connecting.state;
+    const alternatives = await hear(run, {
+        hold,
+        phrases: [...candidates.map(c => c.title), 'list', 'cancel'],
+        label: `connect: ${candidates.length} pages`,
+    });
+    if (!alternatives || voice.connect !== connecting) return;
+
+    const step = connectStep(connecting.state, alternatives);
+    addLog('result', `connect: ${step.outcome}${step.id ? ` ${step.id}` : ''}`);
+    $('voice-heard').textContent = alternatives[0] ? `“${alternatives[0]}”` : 'Nothing heard';
+
+    // Hands-free stops asking after a few silences; START picks it up again.
+    voice.retries = alternatives.length ? 0 : voice.retries + 1;
+    if (step.outcome === 'continue' && handsFree() && voice.retries > MAX_RETRIES) {
+        setVoiceState('idle', 'Tap START to carry on connecting.');
+        return;
+    }
+    connecting.state = step.state;
+    return connectSay(step, run);
+}
+
 function setUpAddDialog() {
+    for (const id of ['read-connect', 'voice-connect']) {
+        $(id).textContent = CONNECT_LABEL;
+        $(id).addEventListener('click', openConnectDialog);
+    }
+    $('connect-cancel').addEventListener('click', () => $('connect-dialog').close());
     for (const id of ['read-add', 'voice-add']) {
         $(id).textContent = ADD_LABEL;
         $(id).addEventListener('click', () => openAddDialog('node'));
@@ -1407,6 +1540,7 @@ async function boot() {
         if (mode() !== 'voice') {
             stopVoice();
             voice.compose = null;
+            voice.connect = null;
             setVoiceState('idle');
         }
         render();

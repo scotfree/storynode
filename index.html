@@ -38,6 +38,7 @@
                 <p id="read-end" class="the-end" hidden></p>
                 <div class="page-links">
                     <button id="read-add" class="add-link" type="button"></button>
+                    <button id="read-connect" class="add-link" type="button"></button>
                     <button id="read-edit" class="add-link" type="button"></button>
                 </div>
                 <div class="row">
@@ -61,6 +62,7 @@
             <ol id="voice-choices" class="voice-choices"></ol>
             <div class="page-links">
                 <button id="voice-add" class="add-link" type="button"></button>
+                <button id="voice-connect" class="add-link" type="button"></button>
                 <button id="voice-edit" class="add-link" type="button"></button>
             </div>
             <details class="voice-settings">
@@ -130,6 +132,17 @@
                 <button type="submit">Submit</button>
             </div>
         </form>
+    </dialog>
+
+    <dialog id="connect-dialog">
+        <h2 id="connect-heading"></h2>
+        <p id="connect-hint" class="hint"></p>
+        <input id="connect-filter" class="connect-filter" type="search" placeholder="Find a title" autocomplete="off" aria-label="Find a title">
+        <ol id="connect-list" class="connect-list"></ol>
+        <p id="connect-errors" class="errors" hidden></p>
+        <div class="row">
+            <button id="connect-cancel" class="ghost" type="button">Cancel</button>
+        </div>
     </dialog>
 
     <dialog id="log-dialog" class="log-dialog">

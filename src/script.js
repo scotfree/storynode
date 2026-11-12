@@ -48,6 +48,7 @@ export const fallbackScript = (full, { heardSomething = false } = {}) => (heardS
 export const HELP_SCRIPT = 'Say a choice by its number, like choice one, or by its name. '
     + 'You can also say repeat, choices, go back, or start over. '
     + 'To add a new page that follows this one, say add new node, and I\'ll ask for its title and text. '
+    + 'To make a page that already exists a choice here, say connect node. '
     + 'To change this page, say edit this node. '
     + 'To begin a whole new story, say add new story.';
 
@@ -65,6 +66,7 @@ export function retryScript(attempt, { hold = false } = {}) {
 // Never read out with the choices; it's a link on the page and a thing you can say.
 export const ADD_LABEL = 'Add new node';
 export const EDIT_LABEL = 'Edit this node';
+export const CONNECT_LABEL = 'Connect node';
 
 // --- two voices ---
 //

@@ -308,6 +308,46 @@ button:disabled {
     text-transform: lowercase;
 }
 
+#connect-dialog h2 {
+    margin-top: 0;
+}
+
+.connect-filter {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.5rem 0.7rem;
+}
+
+.connect-list {
+    list-style: none;
+    margin: 0.6rem 0 1rem;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+    max-height: min(50dvh, 22rem);
+    overflow-y: auto;
+}
+
+.connect-list button {
+    width: 100%;
+    text-align: left;
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    font-family: var(--serif);
+    font-size: 1rem;
+    padding: 0.55rem 0.8rem;
+}
+
+.connect-list button:hover {
+    border-color: var(--accent);
+}
+
 .add-form h2 {
     margin-top: 0;
 }
