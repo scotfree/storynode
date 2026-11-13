@@ -1,0 +1,260 @@
+{
+    "title": "Space Rangers on the mystery Moon",
+    "start": "start",
+    "nodes": [
+        {
+            "id": "start",
+            "title": "Space Rangers on the mystery Moon",
+            "text": "A troop of hard-bitten narrow, well space Rangers explore a mysterious moon that has appeared at the edge of their solar system"
+        },
+        {
+            "id": "survey-the-moon-from-orbit",
+            "title": "Survey the moon from orbit",
+            "text": "You put the Millicent Vasović in a parking orbit around the equator of the strange moon. Running only passive scans to make sure no one knows you're there you take a look. Surprising signs of activity show up in a few clusters near the polls. But you can't tell anything about that with your limited sensor reading.",
+            "parent": [
+                "start",
+                "remember-who-gave-you-the-orders",
+                "think-about-where-you-are"
+            ]
+        },
+        {
+            "id": "head-down-to-the-surface",
+            "title": "Head down to the surface",
+            "text": "You seal up your vacuum suit. There's no atmosphere so your ship slipped silently and quickly down to the surface. Scans show no nearby lifeforms or electrical activity so you step out The gray rocky waist. There's a low ridge The planets north and a Slight bumped in the topography that seems perhaps to be glowing towards the equator.",
+            "parent": [
+                "start",
+                "remember-who-gave-you-the-orders",
+                "think-about-where-you-are"
+            ]
+        },
+        {
+            "id": "head-to-the-ridge",
+            "title": "Head to the ridge",
+            "text": "You pull the grave scooter out of its storage container on your ship and set off across the empty rough landscape. It is a small moon and that means you get close to the ridge faster than you might've expected but the curvature has hidden its height from you and it's significantly taller than you realized. It looks like it will take some work to get to the top but you will have a view of almost this whole hemisphere from up there.",
+            "parent": [
+                "head-down-to-the-surface",
+                "go-back-to-the-ridge"
+            ]
+        },
+        {
+            "id": "investigate-whats-glowing-on-the-equator",
+            "title": "Investigate what's glowing on the equator",
+            "text": "In the low gravity your stride is high and far and very soon you can see it's some sort of artificial structure. The glow seems to be coming from a set of small spheres rotating slowly around the top.",
+            "parent": [
+                "head-down-to-the-surface",
+                "survey-the-moon-from-orbit"
+            ]
+        },
+        {
+            "id": "go-back-for-the-climbing-gear",
+            "title": "Go back for the climbing gear",
+            "text": "On your grass scooter it doesn't take long to go back to the ship and load up your complicated climbing gear. When you come back you feel like something has changed on top of the ridge that the shape looks slightly different.",
+            "parent": [
+                "head-to-the-ridge",
+                "look-around-at-the-view"
+            ]
+        },
+        {
+            "id": "scramble-to-the-top-as-best-you-can",
+            "title": "Scramble to the top as best you can",
+            "text": "The increasingly steep ridge is crumbly rock and space dust and difficult to get a solid grip on as you scramble upward. A few times you think you're going to fall and hope that the low gravity will prevent real damage from puncturing your suit. Eventually after a few close calls and a increasingly high internal temperature on your suit as you sweat from the exertion you crust the ridge. The view from the top is as impressive as you'd hoped but your attention is drawn by what looks like a small. Left recently by someone who spent some time up here.",
+            "parent": "head-to-the-ridge"
+        },
+        {
+            "id": "climb-to-the-top-of-the-structure",
+            "title": "Climb to the top of the structure",
+            "text": "Clambering precariously up the jumbled framework of the strange structure you realize it doesn't have an inside but is a jungle gym of pipes and strange shaped components. You can see a few blinking lights down inside and the globes that are circling it seem connected by small rods. At the very top a small telescope appears to have been mounted long after the rest of the structure was constructed.",
+            "parent": [
+                "investigate-whats-glowing-on-the-equator",
+                "i-do-not"
+            ]
+        },
+        {
+            "id": "try-to-find-a-way-inside-the-structure",
+            "title": "Try to find a way inside the structure",
+            "text": "You walk slowly around the structure finding no obvious entrance.  It seems to be a jumbled maze of pipes and oddly shaped components. Strange pulleys and gears seem to spin for no apparent reason connected to blinking lights and strange capsules. There are a few parts that looks like you might be able to lever apart to climb further inside if you're willing to damage the structure.",
+            "parent": "investigate-whats-glowing-on-the-equator"
+        },
+        {
+            "id": "use-active-sensors",
+            "title": "Use active sensors",
+            "text": "Throwing caution to the wind you throw the switches. The loudest most accurate penetrating sensors you can find and a massive ping erupts across the small planetoid. In this increased resolution that comes washing back you see that several of the clusters of activity seem to be landed spacecraft. Even from here you can see they've been parked where they are for sometime with various embankments and storage tanks stacked up around them. It's impossible to know for how long but as you look at the closest scans you can see that the dust has piled up against some of the equipment for what must have been centuries. Two of the ships appeared to have moving active life inside and one while still mechanically and electrically active seems to have no life.",
+            "parent": "survey-the-moon-from-orbit"
+        },
+        {
+            "id": "investigate-the-closest-occupied-ship",
+            "title": "Investigate the closest occupied ship",
+            "text": "The closest ship showing signs of life barely takes any time at all to reach. In a swirling of the moon dust your ship circles above it as figures in spacesuits come running out waving and gesturing up at you.",
+            "parent": [
+                "use-active-sensors",
+                "visit-the-unoccupied-ship"
+            ]
+        },
+        {
+            "id": "investigate-the-farther-occupied-ship",
+            "title": "Investigate the farther occupied ship",
+            "text": "In a moment or two you've swept around the moonlight and come up from below the horizon on the farther occupied ship. Your instruments indicate. Your instruments indicate defensive scanners and weapon systems active on the ship.",
+            "parent": [
+                "use-active-sensors",
+                "visit-the-unoccupied-ship",
+                "look-around-at-the-view"
+            ]
+        },
+        {
+            "id": "visit-the-unoccupied-ship",
+            "title": "Visit the unoccupied ship",
+            "text": "As you approach the unoccupied ship you see weapons and defensive towers that are inactive. Now that you're closer you can see that while many ships systems are nominally active much of it has been powered down or as you get closer destroyed. Piles of broken and melted metal and ship components.the landscape around the remains of the ship. The ship itself has been half buried in the rocks of the asteroid whether as a defensive measure by impacting explosions or something else is not clear.",
+            "parent": [
+                "use-active-sensors",
+                "summon-summon-your-ship"
+            ]
+        },
+        {
+            "id": "go-back-to-the-ridge",
+            "title": "Go back to the ridge",
+            "text": "A strange unease and superstition about the spacecraft fills you as you look at your monitor screens. Shivering as though some dark cold spirit has passed close to you and then onward you decide to ignore them. With a feeling of relief you rev the engines on your small spacecraft and head back to the ridge that you saw on the opposite side of the moonlight.",
+            "parent": "use-active-sensors"
+        },
+        {
+            "id": "use-the-climbing-gear-to-ascend-immediat",
+            "title": "Use the climbing gear to ascend immediately",
+            "text": "In a rush to see what's up there you throw the climbing boots on and put the special gloves on your hands and rush up the sheer cliff wall. Tiny tentacles with micro claws and suction pads swarm from your hands and feet onto the rock and like you were climbing a ladder you swarm to the top of the rich. A. An obscured figure in a stealth suit is scrambling to load some sort of device into a backpack and exit the ridge when you arrive clearly not expecting you to climb so quickly. You barely get a glimpse of a young face in the suits mask as it leaps out from the top of the ridge activating some sort of glider wings from the shoulders of its suit.",
+            "parent": "go-back-for-the-climbing-gear"
+        },
+        {
+            "id": "go-around-the-ridge",
+            "title": "Go around the ridge",
+            "text": "You try to flank the mysterious figure on the ridge by scooting around the side of the ridge on your scooter. As you make it to the other side you notice. There's some sort of a vehicle parked hidden in the shadow of the ridge now but from up on the top you see movement as it watches your motion and realizes you're approaching its vehicle.",
+            "parent": "go-back-for-the-climbing-gear"
+        },
+        {
+            "id": "take-a-step-back-and-look-around",
+            "title": "Take a step back and look around",
+            "text": "You stepped back a few pieces and are struck by the general layout and feeling of the site. It's suddenly very clear that this was something that was built here not a ship that landed or came from somewhere else. It almost looks grown and just as you're thinking what a strange thought this is you hear a voice from behind you. How do you like my garden it asks.",
+            "parent": "try-to-find-a-way-inside-the-structure"
+        },
+        {
+            "id": "look-more-closely",
+            "title": "Look more closely",
+            "text": "You step in and look at the jumble of metal and plastics and ceramics more closely. It doesn't seem like a machine should seem. Various bits seem connected to each other only incidentally yours are rotated in interesting ways but don't seem to pass the motion on to anything else. Lights blink where they are shaded from anything else. Manufacturing styles differ as if different components were made from parts of spaceships built by different alien races. Some pieces are wildly colorful. Others are utilitarian gray or black but within each category there are differences different choices of colors different types of grey scale. The overall impression is of a messy collection or creative collage from across the galaxy.",
+            "parent": "try-to-find-a-way-inside-the-structure"
+        },
+        {
+            "id": "break-a-piece-off",
+            "title": "Break a piece off",
+            "text": "Using a large crowbar from the tool kit on your scooter you try to snap a piece off for closer inspection. It proves surprisingly easy as the various pieces are not all welded together some being screwed into each other some appear taped and some seem delicately balanced and resting only in the light gravity. You pull a large branch like shape from the structure. What looked like several canisters are welded to the base of the branch and lights flickering up and down the branches are from wires that have been wrapped around them. A small radar dish attached to the end of one branch tip scans left and right up and down even after you've removed the branch. Several small valves his and puff and small balloons and bladders seem to inflate and deflate and move liquids between them. You stare bewilderment at this strange contraption and tell across all common bands a robot voice screeches in rage. What have you done to my flowers it yells.",
+            "parent": [
+                "look-more-closely",
+                "look-around-where-the-telescope-is-mount"
+            ]
+        },
+        {
+            "id": "review-your-orders",
+            "title": "Review your orders",
+            "text": "You pull the torn and beaten paper from your pocket that is the closest you get to official orders in today's space Rangers. On what is clearly a cocktail napkin from one of the worst bars to be found in the spaceports of the withered reach you read a diagram. A cartoonish solar system which is probably supposed to look like yours has a spherical moon approaching it with a cartoonish arrow showing this fact. On one side what looks like a dragon with four legs gesticulates and some specific but completely uninterpretable way. On the other side of the diagram what can only be an oxygen atom seems to be interacting with dark matter sketched with cigarette ash. Scroll across this in what is probably lipstick it reads. Investigate and enter operate appropriately.",
+            "parent": "start"
+        },
+        {
+            "id": "remember-who-gave-you-the-orders",
+            "title": "Remember who gave you the orders",
+            "text": "You think back on that evening not long ago in the. You think back on that evening long ago in the worst part of the worst city on the worst planet in your solar system. Halfway through a carrying out of control night you found yourself carousing with commander Ariana Ariana Arington. Which was a name that you'd heard before and not one that you'd forget because it was so stupid. The commander herself however did not seem stupid and in fact surprised you with her ability to end up winning every game of chance you played for drinks throughout the evening. Only then did she reveal that she was a commander of the space Rangers and give you that scribble page of orders.",
+            "parent": "review-your-orders"
+        },
+        {
+            "id": "think-about-where-you-are",
+            "title": "Think about where you are",
+            "text": "You remember when you came to the withered reach. It wasn't that long ago but it seems forever. You'd hopes to find your way through adventure perseverance and general could fortune to a more advanced position in the space ranges and maybe a job that required less time in the field. You're not really sure what that would mean because you've never seen space Rangers not in the field but you have grand imaginings of cool climate controlled space stations with huge greenhouses and organic food and. Lots of meetings. It didn't really work out that way and most of your time had been spent saving creatures that nobody seems to really want saved and finding ways for angry locals to not kill other angry locals. None of which really conveyed on a after action summary the cleverness and flexibility of your solutions. At least this set of orders left some room for improvisation and your own creativity. A lot of room since it wasn't clear what in fact you were supposed to do here.",
+            "parent": "review-your-orders"
+        },
+        {
+            "id": "look-through-the-telescope",
+            "title": "Look through the telescope",
+            "text": "With only a small amount of nervousness you press the face mask of your suit against the eyepiece on the telescope. It takes a moment to focus but you realize that you're looking at a far away spacecraft parked on the surface of the moon. Parked for a long time as you noticed the dust piled up against it in the signs of years maybe decades maybe centuries of habitation in the form of garbage piles old destroyed spacecraft and. Funny shaped plants. You can see right into the window of the spaceship and look away suddenly embarrassed as you realize an alien is taking a shower inside.",
+            "parent": "climb-to-the-top-of-the-structure"
+        },
+        {
+            "id": "look-around-where-the-telescope-is-mount",
+            "title": "Look around where the telescope is mounted",
+            "text": "At the top of the strange structure the various poking bits of garters and half exposed machinery has a small surprisingly cozy nest. A half high wall of spikes and mechanism. Inform a Powerade. Wally flat spot and a bench are clearly intended for whoever looks through the telescope. Slightly startled you realize that the bench is built for some form of bottom that is not human. In fact it appears to have mount points as if something could slot into position and be locked in place rather than simply passively sitting.",
+            "parent": "climb-to-the-top-of-the-structure"
+        },
+        {
+            "id": "try-to-sit-on-the-bench",
+            "title": "Try to sit on the bench",
+            "text": "With a quick lighter scan you feed your suit a 3-D model of the bench and ask it to reconfigure it's interfaces for the purpose of sitting. With a quick puff of fog into the moons missing atmosphere you see Mount points on your hips and thighs. On your suit. Gingerly and cautiously you lower yourself to a sitting position and feel the new interfaces on your suit click and lock into place. There is a surprisingly pleasant vibration through the bench and the entire structure begins to hum and puff smoke and flash lights. With a start you realize it's beginning to move.",
+            "parent": "look-around-where-the-telescope-is-mount"
+        },
+        {
+            "id": "disconnect-from-the-structure",
+            "title": "Disconnect from the structure",
+            "text": "With. With a start you. Is on the sides of your suit and hurl yourself off the platform landing in the low gravity with almost. Beside it you stare up as the entire structure shakes and quakes and then settles back down into the quietest and it seems to have held for 1000 years. You heave a slight sigh of relief then nearly. Then nearly soil the insides of your suit as you hear a robot voice behind you on all public bands say: \"How do you like my flowers.\"",
+            "parent": "try-to-sit-on-the-bench"
+        },
+        {
+            "id": "investigate-the-site",
+            "title": "Investigate the site",
+            "text": "You walk over and look at where someone was clearly keeping a watch. What looks like the remains of an old camp stove and water storage unit lie discarded but recently so. You can see a path worn to this point from the side opposite the one you came up on the ridge and at the very bottom what looks like.",
+            "parent": "scramble-to-the-top-as-best-you-can"
+        },
+        {
+            "id": "look-around-at-the-view",
+            "title": "Look around at the view",
+            "text": "You really can't see half of the moonlight from up here. The perfect. The perfect circle of the horizon of course reaches. Far off in the distance you can see what looks like a pile of industrial waste with a faint heat haze above it a. What looks like a spacecraft parked against the lead of a rock. And your own space Ranger space hopper where you parked it.",
+            "parent": "scramble-to-the-top-as-best-you-can"
+        },
+        {
+            "id": "follow-the-path-down",
+            "title": "Follow the path down",
+            "text": "With the bouncy half terrified and half fun. With the half terrifying half exhilarating gate that the low gravity gives you you bounce and slide your way down the ridge following the path. Where the ridge meets the flat plane you find a small scooter not unlike your own parked against a rock with a camouflage net laid across it.",
+            "parent": "investigate-the-site"
+        },
+        {
+            "id": "look-for-other-exits",
+            "title": "Look for other exits",
+            "text": "With a. You look up from the path and cast a seeking gaze around the rest of the ridge and even out across the sky filled with stars to the curved tiny horizon. With a shock you realize that you can see a object right at the line of the horizon moving away from you. Snapping the magnification on your suit visor to zoom in you see a small figure in a powered suit with glider wings attached to its shoulders headed for the distant but not that distant horizon. Since there is no atmosphere you realize the wings must be some sort of magnetic or other propulsion system and wonder at the technological level of whoever has been watching you from the ridge.",
+            "parent": "investigate-the-site"
+        },
+        {
+            "id": "summon-summon-your-ship",
+            "title": "Summon summon your ship",
+            "text": "Feeling the thrill of the hunt surge through you you slap the commands on your wrist computer to bring your ship scrambling from over the horizon to pause hanging just above you as it lowers the ladder for you to climb in. Sending it after the strange figure even as the outer hatch closes you pursue. Your instruments allow you to see as the figure descends to earth near what looks to be a ship landing site. And as you get closer you realize it's a ship landing site that has not seen the ship there do anything but be landed for decades or perhaps centuries.",
+            "parent": "look-for-other-exits"
+        },
+        {
+            "id": "leap-down-and-try-to-chase-it",
+            "title": "Leap down and try to chase it",
+            "text": "With huge strides and leaping bounds you descend from the top of the ridge and race out across the planes in the direction you saw the suit headed. In the low gravity you are able to run like a amazing running creature. Your huge steps seem to cover kilometers as you race after the strange contraption. Before you get there however you barely manage to throw yourself to the side as one of your leaps almost brings you down on what can only be described as a rats nest of metal and spare parts.",
+            "parent": "look-for-other-exits"
+        },
+        {
+            "id": "fire-your-ships-weapons",
+            "title": "Fire your ship's weapons",
+            "text": "it looks like some of them are lining up ground-to-air missiles on your ship and you can hear the ;ing of lock-on alerts in the symphony of your systems. You can't take the risk so you direct a cautionary volley of blazing plasma death in a line right in front of them - the universal sign for \"stop doing that\".",
+            "parent": "investigate-the-closest-occupied-ship"
+        },
+        {
+            "id": "attempt-to-communicate",
+            "title": "Attempt to Communicate",
+            "text": "You think their gesticulation may convey meaning! \nYou pull your hand back from the trigger just before you fire a wave of fiery death their way even through they've made no attempt to contact you on any common bandwidths or platforms.\n\nJust this scuffling around in the space dust.\n\nYou've been watching one of them trudge around in circles - scuffing and dragging their feet in seeming torpor and mindless drudgery - and suddenly you frown and zoom out. Yes! They are sketching out glyphs - standard Galstan glyphs - in big looping tracks on the ground. Pulling that particular alphabet up from way deep in the back of your brain, you realize what they're spelling out:\n\n\"Transmitter broken. Will trade dinner for parts.\"\n\nIn a few minutes you're out on the surface in your suit, looking at the strange object before you. You'd thought it an unoccupied ship but now are not so sure. Maybe if you built a ship out of spiral staircases and space-buoys and glowing gear systems.\n\nA local touches his helmet against yours to transmit sound and you hear a robotic voice ask:\n\n\"How do you like my flower garden?\"",
+            "parent": "investigate-the-closest-occupied-ship"
+        },
+        {
+            "id": "i-like-the-flower-garden",
+            "title": "I do like the flower garden!",
+            "text": "\"I do like the flower garden! I really do!\", you explain.\n\nJoyous and proud, the robot explains how long it's been working on the strange construction - welding and balancing, scavenging and synchronizing. It explains which sections of which wrecked spaceship it used to make which arches and colonnaded antennae. Parts blink on and off and change colors in time with his gestures.\n\nEventually the whole thing begins to spin - slowly at first, then faster - and the edges rise up in a floral dance that subsides again as it slows to a halt. The center now is revealed as a dark opening down into the moonlet's interior.",
+            "parent": [
+                "attempt-to-communicate",
+                "take-a-step-back-and-look-around"
+            ]
+        },
+        {
+            "id": "i-do-not",
+            "title": "I do not",
+            "text": "You laugh the idea if the jumbled mess being anyone's garden.  Looking at it, though, you realize there's something interesting on the top of it.",
+            "parent": [
+                "attempt-to-communicate",
+                "take-a-step-back-and-look-around"
+            ]
+        }
+    ]
+}
