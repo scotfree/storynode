@@ -13,7 +13,9 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 
 ## Layout
 
-- `favicon.svg` (and two PNGs rendered from it): the logo, SN as nodes and edges.
+- `storynodelogo.png`: the logo as drawn (black on transparent). `logo.png` (the top bar,
+  inverted in dark mode) and `favicon.png` / `apple-touch-icon.png` (on a cream tile) are
+  made from it with the lines thickened, so they survive being small.
 - `index.html`, `style.css`: the page. Modes switch on the URL hash (`#map`, `#read`, `#voice`).
 - `src/app.js`: UI and the voice loop (read page → read choices → listen → act). A `run`
   counter cancels stale async steps when the user taps or changes mode.
@@ -114,7 +116,7 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   around a focus that follows the mouse or a dragged finger; a map that already fits isn't
   distorted. Node elements are built once per render and only moved afterwards, so a
   gesture never replaces the element under the finger; clicks right after a pinch or drag
-  are swallowed.
+  are swallowed. A green ring marks the start node and blue rings the endings.
 - A started story in voice mode holds a screen wake lock (the phone locking mid-page stops
   the reading), re-asked whenever the page becomes visible again, and released on leaving
   voice mode. On by default, with a switch in Voice settings.

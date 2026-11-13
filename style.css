@@ -13,6 +13,9 @@
     --node: #fffaf0;
     --node-current: #f3d9b8;
     --node-visited: #efe6d6;
+    --start-ring: #2f8a4f;     /* where a story starts */
+    --end-ring: #2f63b0;       /* where it ends */
+    --logo-invert: 0;
     /* The story is typewritten; everything you operate is plain sans.
        American Typewriter is on Apple devices, Courier nearly everywhere else. */
     --serif: "American Typewriter", "Courier New", Courier, "Liberation Mono", monospace;
@@ -33,6 +36,9 @@
         --node: #24211d;
         --node-current: #5a3a22;
         --node-visited: #2e2a24;
+        --start-ring: #5fcf86;
+        --end-ring: #7fb0f0;
+        --logo-invert: 1;
     }
 }
 
@@ -110,6 +116,11 @@ button:disabled {
 
 .brand img {
     display: block;
+}
+
+/* The logo is drawn in black; in dark mode it's turned light. */
+.brand .logo {
+    filter: invert(var(--logo-invert));
 }
 
 /* The story's title, set as a title. It's a real select underneath. */
@@ -254,6 +265,21 @@ button:disabled {
 
 #map-svg .node {
     cursor: pointer;
+}
+
+/* Rings: green round the start, blue round every ending. */
+#map-svg .node rect.ring {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-dasharray: none;
+}
+
+#map-svg .node .ring.start {
+    stroke: var(--start-ring);
+}
+
+#map-svg .node .ring.end {
+    stroke: var(--end-ring);
 }
 
 #map-svg .node.tiny rect {

@@ -272,7 +272,10 @@ function renderMap() {
         title.textContent = box.title;
         const rect = svgEl('rect');
         const text = svgEl('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' });
-        g.append(title, rect, text);
+        // A ring marks where the story starts (green) and where it ends (blue).
+        const ringKind = box.id === story.start ? 'start' : isEnding(story, box.id) ? 'end' : null;
+        const ring = ringKind ? svgEl('rect', { class: `ring ${ringKind}` }) : null;
+        g.append(title, ...(ring ? [ring] : []), rect, text);
         // Opens the node's edit form, which also offers to read from there.
         const open = () => openAddDialog('edit', box.id);
         g.addEventListener('click', open);
@@ -283,7 +286,7 @@ function renderMap() {
             map.focus = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
             placeMap();
         });
-        return [box.id, { g, rect, text, box }];
+        return [box.id, { g, rect, text, ring, box }];
     }));
     map.parts = { edges, nodes };
     svg.replaceChildren(defs, ...edges.map(e => e.path), ...[...nodes.values()].map(n => n.g));
@@ -318,9 +321,10 @@ function placeMap({ centre = false } = {}) {
         svg.setAttribute('width', width);
         svg.setAttribute('height', height);
         const placed = fisheyeLayout(layout, { width, height, focus: map.focus });
-        for (const { g, rect, text, box } of parts.nodes.values()) {
+        for (const { g, rect, text, ring, box } of parts.nodes.values()) {
             const p = placed.boxes.get(box.id);
             setAttrs(rect, { x: p.x, y: p.y, width: p.w, height: p.h });
+            if (ring) placeRing(ring, p, Math.max(1.5, 5 * p.h / box.h));
             setAttrs(text, { x: p.x + p.w / 2, y: p.y + p.h / 2 });
             text.style.fontSize = `${p.font}px`;
             text.style.visibility = p.font < 6 ? 'hidden' : '';
@@ -336,8 +340,9 @@ function placeMap({ centre = false } = {}) {
     }
 
     // Normal: the layout's own coordinates, drawn at the zoom.
-    for (const { g, rect, text, box } of parts.nodes.values()) {
+    for (const { g, rect, text, ring, box } of parts.nodes.values()) {
         setAttrs(rect, { x: box.x, y: box.y, width: box.w, height: box.h });
+        if (ring) placeRing(ring, box, 5);
         setAttrs(text, { x: box.x + box.w / 2, y: box.y + box.h / 2 });
         text.style.fontSize = '';
         text.style.visibility = '';
@@ -355,6 +360,13 @@ function placeMap({ centre = false } = {}) {
         const current = layout.nodes.find(b => b.id === currentId);
         if (current) scroller.scrollLeft = Math.max(0, (current.x + current.w / 2) * map.zoom - scroller.clientWidth / 2);
     }
+}
+
+// A rounded ring just outside a node's box, `gap` away from it.
+function placeRing(ring, { x, y, w, h }, gap) {
+    setAttrs(ring, { x: x - gap, y: y - gap, width: w + gap * 2, height: h + gap * 2 });
+    ring.style.rx = `${Math.round(h / 2 + gap)}px`;
+    ring.style.strokeWidth = `${Math.max(1, Math.min(2.5, gap / 2))}px`;
 }
 
 function setAttrs(node, attrs) {

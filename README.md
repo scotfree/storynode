@@ -35,7 +35,7 @@ Three modes, sharing your place in the story:
   scrolls, and zooms with a pinch, a trackpad pinch or ctrl + scroll. Fisheye
   fits the whole story in the frame and magnifies around your finger (drag
   across it) or the mouse, squeezing the rest towards the edges; rows stay
-  straight.
+  straight. A green ring marks where the story starts, blue rings where it ends.
 - **Read**: a page of text with the choices as buttons.
 - **Voice**: one big button, made for a phone. Tap once and it reads the page
   and the choices. Then hold the button, say your answer, and let go. Holding
