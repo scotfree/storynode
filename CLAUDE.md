@@ -48,7 +48,8 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 - `src/arc.js`: tracks a drag around the big button as a signed sweep, for the arc
   controls (Repeat, Restart, mode dial).
 - `src/layout.js`: map layout (rows by longest path, ordered by parents' positions), the
-  Cartesian fisheye that fits it into a frame around a focus, and zoom arithmetic.
+  Cartesian fisheye that fits it into a frame around a focus, a spring layout
+  (`forceLayout`), and zoom arithmetic.
 - `src/script.js`: everything voice mode says.
 - `stories/index.json`: names of the built-in stories; `stories/lighthouse.json` is the sample.
 
@@ -110,13 +111,18 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   the voice page the status line lives in the bottom strip with what was heard, the mode
   dial carries its own label, and held it shows the other mode at the far side with two
   arrows. The map's svg is `map-svg`, not `map`, or the `#map` hash scrolls to it.
-- The map has two looks, remembered in `storynode_map`. Normal: the layout at a zoom,
+- The map has three looks, remembered in `storynode_map`. Normal: the layout at a zoom,
   scrolled natively (`touch-action: pan-x pan-y`), with pinch handled by the page from touch
   events, Safari's gesture events and ctrl + wheel. Fisheye: each axis distorted on its own
   around a focus that follows the mouse or a dragged finger; a map that already fits isn't
   distorted. Node elements are built once per render and only moved afterwards, so a
   gesture never replaces the element under the finger; clicks right after a pinch or drag
-  are swallowed. A green ring marks the start node and blue rings the endings.
+  are swallowed. Physics: Normal's scrolling and zoom over `forceLayout`, a
+  Fruchterman-Reingold spring layout written here (no library, keeping "no dependencies"):
+  deterministic because it starts from the layered layout, repulsion cut off beyond three
+  spring lengths, a light pull to the middle, then a pass that pushes overlapping boxes
+  apart; edges are straight. It's cached per story object. The map scrolls inside a
+  frame that ends at the window's bottom, so the look switch stays in reach. A green ring marks the start node and blue rings the endings.
 - A started story in voice mode holds a screen wake lock (the phone locking mid-page stops
   the reading), re-asked whenever the page becomes visible again, and released on leaving
   voice mode. On by default, with a switch in Voice settings.

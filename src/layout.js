@@ -143,3 +143,122 @@ export function zoomAround({ zoom, scrollLeft, scrollTop }, next, x, y) {
         scrollTop: Math.max(0, ((scrollTop + y) / zoom) * next - y),
     };
 }
+
+// --- physics ---
+//
+// A spring layout, in the spirit of Graphviz's neato and fdp: every node
+// pushes every other away, every link pulls its two ends together, and the
+// whole settles as the moves shrink. It ignores rows, so branches spread out
+// across the page instead of stacking into columns. No randomness: it starts
+// from the layered layout, so the same story always lands the same way.
+// Returns the same shape as layoutGraph, with straight edges.
+
+export function forceLayout(story, {
+    nodeWidth = 180, nodeHeight = 48, length = 220, iterations = 300, gravity = 0.05, gap = 18, pad = 24,
+} = {}) {
+    const base = layoutGraph(story, { nodeWidth, nodeHeight });
+    const count = base.nodes.length;
+    const index = new Map(base.nodes.map((n, i) => [n.id, i]));
+    const links = base.edges.map(e => [index.get(e.from), index.get(e.to)]);
+    const xs = base.nodes.map(n => n.x + n.w / 2);
+    const ys = base.nodes.map(n => n.y + n.h / 2);
+    const k = length;
+
+    for (let step = 0; step < iterations; step++) {
+        const dx = new Float64Array(count);
+        const dy = new Float64Array(count);
+        // Everyone pushes everyone: k² / distance.
+        for (let i = 0; i < count; i++) {
+            for (let j = i + 1; j < count; j++) {
+                let x = xs[i] - xs[j];
+                let y = ys[i] - ys[j];
+                let d = Math.hypot(x, y);
+                if (d < 0.01) {
+                    x = 0.01 * (j - i);
+                    y = 0.01;
+                    d = Math.hypot(x, y);
+                }
+                if (d > k * 3) continue;            // far apart: no push (as fdp does)
+                const f = (k * k) / d / d;
+                dx[i] += x * f; dy[i] += y * f;
+                dx[j] -= x * f; dy[j] -= y * f;
+            }
+        }
+        // Links pull: distance² / k.
+        for (const [a, b] of links) {
+            const x = xs[a] - xs[b];
+            const y = ys[a] - ys[b];
+            const d = Math.max(0.01, Math.hypot(x, y));
+            const f = d / k;
+            dx[a] -= x * f; dy[a] -= y * f;
+            dx[b] += x * f; dy[b] += y * f;
+        }
+        // A light pull to the middle, so separate pieces don't drift apart.
+        const cx = xs.reduce((s, v) => s + v, 0) / count;
+        const cy = ys.reduce((s, v) => s + v, 0) / count;
+        // Each move is capped by a temperature that cools to nothing.
+        const heat = k * 0.5 * (1 - step / iterations) + 0.5;
+        for (let i = 0; i < count; i++) {
+            dx[i] += (cx - xs[i]) * gravity;
+            dy[i] += (cy - ys[i]) * gravity;
+            const d = Math.hypot(dx[i], dy[i]);
+            if (d === 0) continue;
+            const move = Math.min(d, heat) / d;
+            xs[i] += dx[i] * move;
+            ys[i] += dy[i] * move;
+        }
+    }
+
+    // Boxes are wider than they are tall, which springs don't know: push any
+    // that still overlap apart along the shorter way out.
+    const needX = nodeWidth + gap;
+    const needY = nodeHeight + gap;
+    for (let pass = 0; pass < 200; pass++) {
+        let moved = false;
+        for (let i = 0; i < count; i++) {
+            for (let j = i + 1; j < count; j++) {
+                const x = xs[j] - xs[i];
+                const y = ys[j] - ys[i];
+                const ox = needX - Math.abs(x);
+                const oy = needY - Math.abs(y);
+                if (ox <= 0 || oy <= 0) continue;
+                moved = true;
+                if (ox / needX < oy / needY) {
+                    const s = (x > 0 || (x === 0 && j > i) ? 1 : -1) * (ox / 2 + 0.5);
+                    xs[i] -= s; xs[j] += s;
+                } else {
+                    const s = (y > 0 || (y === 0 && j > i) ? 1 : -1) * (oy / 2 + 0.5);
+                    ys[i] -= s; ys[j] += s;
+                }
+            }
+        }
+        if (!moved) break;
+    }
+
+    // Fit the result to the page, with a margin.
+    const left = Math.min(...xs) - nodeWidth / 2 - pad;
+    const top = Math.min(...ys) - nodeHeight / 2 - pad;
+    const nodes = base.nodes.map((n, i) => ({ ...n, x: xs[i] - nodeWidth / 2 - left, y: ys[i] - nodeHeight / 2 - top }));
+    const width = Math.max(...nodes.map(n => n.x + n.w)) + pad;
+    const height = Math.max(...nodes.map(n => n.y + n.h)) + pad;
+    const at = new Map(nodes.map(n => [n.id, n]));
+    const edges = base.edges.map(({ from, to }) => {
+        const a = at.get(from);
+        const b = at.get(to);
+        const [x1, y1] = borderPoint(a, b);
+        const [x2, y2] = borderPoint(b, a);
+        return { from, to, x1, y1, x2, y2, straight: true };
+    });
+    return { nodes, edges, width, height };
+}
+
+// Where the line from box a's centre to box b's centre leaves box a.
+function borderPoint(a, b) {
+    const cx = a.x + a.w / 2;
+    const cy = a.y + a.h / 2;
+    const dx = b.x + b.w / 2 - cx;
+    const dy = b.y + b.h / 2 - cy;
+    if (dx === 0 && dy === 0) return [cx, cy];
+    const scale = Math.min(dx ? (a.w / 2) / Math.abs(dx) : Infinity, dy ? (a.h / 2) / Math.abs(dy) : Infinity);
+    return [cx + dx * scale, cy + dy * scale];
+}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { loadStory, choicesOf, isEnding, parentsOf, addNode, editNode, connectNode, connectable, idFor } from '../src/story.js';
 import { match, numberFrom, commandFrom, titleHits, hintPhrases, normalize } from '../src/matcher.js';
-import { layoutGraph, fisheyeAxis, fisheyeLayout, zoomRange, clampZoom, zoomAround } from '../src/layout.js';
+import { layoutGraph, forceLayout, fisheyeAxis, fisheyeLayout, zoomRange, clampZoom, zoomAround } from '../src/layout.js';
 import { sentences, rankVoices, mergeSegments, listenOnce, createSpeaker } from '../src/speech.js';
 import { pageScript, choicesScript, choicesPrompt, fallbackScript, storySentences, voiceParts, numberWord, retryScript, HELP_SCRIPT } from '../src/script.js';
 import { createLog, matchLines } from '../src/voicelog.js';
@@ -273,6 +273,53 @@ test('zoom goes down to fitting the map and keeps the pinched point still', () =
     assert.equal((before.scrollLeft + 50) / 1, (after.scrollLeft + 50) / 2);
     assert.equal((before.scrollTop + 80) / 1, (after.scrollTop + 80) / 2);
     assert.deepEqual(zoomAround({ zoom: 1, scrollLeft: 0, scrollTop: 0 }, 0.5, 100, 100), { scrollLeft: 0, scrollTop: 0 });
+});
+
+section('map: physics');
+
+const sample = loadStory(JSON.parse(readFileSync(new URL('../stories/lighthouse.json', import.meta.url), 'utf8'))).story;
+const overlaps = (a, b, gap = 0) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+
+test('physics lays out every node without overlaps, inside the page', () => {
+    for (const s of [sample, bigStory, loadStory(tiny).story]) {
+        const layout = forceLayout(s);
+        assert.equal(layout.nodes.length, s.byId.size);
+        for (const n of layout.nodes) {
+            assert.ok(n.x >= 0 && n.y >= 0 && n.x + n.w <= layout.width && n.y + n.h <= layout.height, n.id);
+        }
+        for (let i = 0; i < layout.nodes.length; i++) {
+            for (let j = i + 1; j < layout.nodes.length; j++) {
+                assert.ok(!overlaps(layout.nodes[i], layout.nodes[j]), `${layout.nodes[i].id} / ${layout.nodes[j].id}`);
+            }
+        }
+    }
+});
+
+test('physics is the same every time, and joined nodes sit closer than strangers', () => {
+    assert.deepEqual(forceLayout(sample), forceLayout(sample));
+    const layout = forceLayout(sample);
+    const at = new Map(layout.nodes.map(n => [n.id, n]));
+    const apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    const joined = layout.edges.map(e => apart(at.get(e.from), at.get(e.to)));
+    const all = [];
+    for (const a of layout.nodes) for (const b of layout.nodes) if (a.id < b.id) all.push(apart(a, b));
+    const mean = (v) => v.reduce((s, x) => s + x, 0) / v.length;
+    assert.ok(mean(joined) < mean(all) * 0.75, `${mean(joined)} vs ${mean(all)}`);
+});
+
+test('physics edges are straight, from box edge to box edge', () => {
+    const layout = forceLayout(sample);
+    const at = new Map(layout.nodes.map(n => [n.id, n]));
+    const onBorder = (p, b) => {
+        const inside = p[0] >= b.x - 0.01 && p[0] <= b.x + b.w + 0.01 && p[1] >= b.y - 0.01 && p[1] <= b.y + b.h + 0.01;
+        const edge = [b.x, b.x + b.w].some(v => Math.abs(p[0] - v) < 0.01) || [b.y, b.y + b.h].some(v => Math.abs(p[1] - v) < 0.01);
+        return inside && edge;
+    };
+    assert.equal(layout.edges.length, layoutGraph(sample).edges.length);
+    for (const e of layout.edges) {
+        assert.equal(e.straight, true);
+        assert.ok(onBorder([e.x1, e.y1], at.get(e.from)) && onBorder([e.x2, e.y2], at.get(e.to)), `${e.from} → ${e.to}`);
+    }
 });
 
 section('speech and script');

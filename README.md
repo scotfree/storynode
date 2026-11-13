@@ -31,8 +31,10 @@ built-in one.
 Three modes, sharing your place in the story:
 
 - **Map**: the whole story's shape, titles only. Click a page to edit it; the
-  edit form also has "Read from here". Two looks, switched at the top: Normal
-  scrolls, and zooms with a pinch, a trackpad pinch or ctrl + scroll. Fisheye
+  edit form also has "Read from here". Three looks, switched at the top: Normal
+  scrolls, and zooms with a pinch, a trackpad pinch or ctrl + scroll. Physics is
+  the same but laid out by springs, like Graphviz's neato: branches spread
+  across the page instead of stacking in rows. Fisheye
   fits the whole story in the frame and magnifies around your finger (drag
   across it) or the mouse, squeezing the rest towards the edges; rows stay
   straight. A green ring marks where the story starts, blue rings where it ends.

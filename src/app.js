@@ -4,7 +4,7 @@
 //   #voice — a big button: it reads the page and the choices, then listens
 
 import { loadStory, choicesOf, isEnding, addNode, editNode, connectNode, connectable, idFor } from './story.js';
-import { layoutGraph, fisheyeLayout, zoomRange, clampZoom, zoomAround } from './layout.js';
+import { layoutGraph, forceLayout, fisheyeLayout, zoomRange, clampZoom, zoomAround } from './layout.js';
 import { match, hintPhrases } from './matcher.js';
 import { createSpeaker, listenOnce, support, rankVoices, sentences } from './speech.js';
 import { pageScript, choicesPrompt, fallbackScript, storySentences, voiceParts, HELP_SCRIPT, retryScript, ADD_LABEL, EDIT_LABEL, CONNECT_LABEL } from './script.js';
@@ -218,9 +218,11 @@ function render() {
 
 // --- map ---
 //
-// Two ways to look at it. Normal: the map at its own size, scrolled, and
-// pinched (or ctrl-scrolled) to zoom. Fisheye: the whole map in the frame,
-// magnified around a point that follows a finger or the mouse. The nodes are
+// Three ways to look at it. Normal: the map in rows at its own size,
+// scrolled, and pinched (or ctrl-scrolled) to zoom. Physics: the same, but
+// laid out by springs, so branches spread across the page. Fisheye: the rows
+// fitted into the frame, magnified around a point that follows a finger or
+// the mouse. The nodes are
 // built once per render and then only moved, so a gesture never replaces the
 // element under a finger.
 
@@ -228,7 +230,21 @@ const MAP_KEY = 'storynode_map';    // { look, zoom }
 const MAP_HINTS = {
     normal: 'Pinch or ctrl-scroll to zoom. Tap a node to edit it, or to read from there.',
     fisheye: 'Drag across the map, or move the mouse, to look closer. Tap a node to edit it.',
+    physics: 'Laid out by springs. Pinch or ctrl-scroll to zoom. Tap a node to edit it.',
 };
+const MAP_LOOKS = Object.keys(MAP_HINTS);
+
+// Normal and Physics both scroll and zoom; only their layouts differ.
+const zoomable = () => map.look !== 'fisheye';
+
+// The spring layout takes a moment on a big story, so it's kept until the
+// story changes (every edit makes a new story object).
+let physicsCache = { story: null, layout: null };
+function mapLayout() {
+    if (map.look !== 'physics') return layoutGraph(story);
+    if (physicsCache.story !== story) physicsCache = { story, layout: forceLayout(story) };
+    return physicsCache.layout;
+}
 
 const map = {
     look: 'normal', zoom: 1, layout: null, parts: null,
@@ -253,7 +269,7 @@ function mapRoom() {
 }
 
 function renderMap() {
-    const layout = layoutGraph(story);
+    const layout = mapLayout();
     map.layout = layout;
     const svg = $('map-svg');    // not "map": the #map hash would scroll the page to it
     const defs = svgEl('defs');
@@ -301,7 +317,8 @@ function renderMap() {
     placeMap({ centre: true });
 }
 
-const edgePath = ({ x1, y1, x2, y2 }) => {
+const edgePath = ({ x1, y1, x2, y2, straight }) => {
+    if (straight) return `M${x1} ${y1} L${x2} ${y2}`;
     const mid = (y1 + y2) / 2;
     return `M${x1} ${y1} C${x1} ${mid} ${x2} ${mid} ${x2} ${y2 - 2}`;
 };
@@ -316,6 +333,7 @@ function placeMap({ centre = false } = {}) {
     $('map-hint').textContent = MAP_HINTS[map.look];
 
     if (map.look === 'fisheye') {
+        scroller.style.maxHeight = '';
         const { width, height } = mapRoom();
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.setAttribute('width', width);
@@ -339,7 +357,7 @@ function placeMap({ centre = false } = {}) {
         return;
     }
 
-    // Normal: the layout's own coordinates, drawn at the zoom.
+    // Normal and Physics: the layout's own coordinates, drawn at the zoom.
     for (const { g, rect, text, ring, box } of parts.nodes.values()) {
         setAttrs(rect, { x: box.x, y: box.y, width: box.w, height: box.h });
         if (ring) placeRing(ring, box, 5);
@@ -353,12 +371,18 @@ function placeMap({ centre = false } = {}) {
     for (const { edge, path } of parts.edges) path.setAttribute('d', edgePath(edge));
     svg.setAttribute('viewBox', `0 0 ${layout.width} ${layout.height}`);
     const room = mapRoom();
+    // The map scrolls inside its frame, which ends at the bottom of the
+    // window, so the controls above it stay in reach.
+    scroller.style.maxHeight = `${room.height}px`;
     map.zoom = clampZoom(map.zoom, zoomRange(layout, room.width, room.height));
     sizeMap();
     if (centre) {
         // Keep the current node in view.
         const current = layout.nodes.find(b => b.id === currentId);
-        if (current) scroller.scrollLeft = Math.max(0, (current.x + current.w / 2) * map.zoom - scroller.clientWidth / 2);
+        if (current) {
+            scroller.scrollLeft = Math.max(0, (current.x + current.w / 2) * map.zoom - scroller.clientWidth / 2);
+            scroller.scrollTop = Math.max(0, (current.y + current.h / 2) * map.zoom - scroller.clientHeight / 2);
+        }
     }
 }
 
@@ -400,13 +424,13 @@ function saveMapSettings() {
 
 function setUpMap() {
     const saved = readJson(MAP_KEY) ?? {};
-    map.look = saved.look === 'fisheye' ? 'fisheye' : 'normal';
+    map.look = MAP_LOOKS.includes(saved.look) ? saved.look : 'normal';
     map.zoom = Number(saved.zoom) > 0 ? Number(saved.zoom) : 1;
     document.querySelector(`#map-look input[value="${map.look}"]`).checked = true;
     $('map-look').addEventListener('change', (e) => {
         map.look = e.target.value;
         saveMapSettings();
-        placeMap({ centre: true });
+        renderMap();     // Physics has its own layout
     });
 
     const scroller = mapScroller();
@@ -429,7 +453,7 @@ function setUpMap() {
     const spread = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
     const middle = (t) => local((t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
     scroller.addEventListener('touchstart', (e) => {
-        if (map.look !== 'normal' || e.touches.length !== 2) return;
+        if (!zoomable() || e.touches.length !== 2) return;
         pinch = { distance: spread(e.touches), zoom: map.zoom };
         quietClicks();
     }, { passive: true });
@@ -453,7 +477,7 @@ function setUpMap() {
     let gesture = null;
     scroller.addEventListener('gesturestart', (e) => {
         e.preventDefault();
-        if (map.look === 'normal' && !pinch) gesture = { zoom: map.zoom };
+        if (zoomable() && !pinch) gesture = { zoom: map.zoom };
     });
     scroller.addEventListener('gesturechange', (e) => {
         e.preventDefault();
@@ -470,7 +494,7 @@ function setUpMap() {
     // Trackpad pinch in other browsers, and ctrl + mouse wheel.
     let wheelSave = 0;
     scroller.addEventListener('wheel', (e) => {
-        if (map.look !== 'normal' || !e.ctrlKey) return;
+        if (!zoomable() || !e.ctrlKey) return;
         e.preventDefault();
         const at = local(e.clientX, e.clientY);
         zoomMapTo(map.zoom * Math.exp(-e.deltaY * 0.01), at.x, at.y);
