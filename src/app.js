@@ -55,7 +55,10 @@ const modelVoice = createModelVoice({
     onClip: ({ text, seconds, took, peak, ok, error }) => addLog(ok ? 'model' : 'error',
         ok ? `${timingNote(seconds, took)}, peak ${peak.toFixed(2)}: “${text}”` : `model: ${error} after ${took.toFixed(1)} s: “${text}”`),
 });
-const player = createPlayer();
+// Every clip's fate goes in the voice log, so silence can be traced.
+const player = createPlayer({
+    onEvent: (name, detail) => addLog(name === 'played' ? 'mic' : 'error', `audio ${name}: ${detail}`),
+});
 const modelSpeaker = createClipSpeaker({
     source: modelVoice,
     player,
@@ -630,6 +633,7 @@ function setVoiceState(state, status = '') {
 
 let wakeLock = null;
 let wakeLockAsking = false;
+let wakeLockRefused = false;    // don't ask again until the page comes back into view
 
 const wantsAwake = () => $('keep-awake').checked && mode() === 'voice' && voice.started
     && document.visibilityState === 'visible';
@@ -642,7 +646,7 @@ async function syncWakeLock() {
         held?.release().catch(() => {});
         return;
     }
-    if (wakeLock || wakeLockAsking) return;
+    if (wakeLock || wakeLockAsking || wakeLockRefused) return;
     wakeLockAsking = true;
     try {
         const lock = await navigator.wakeLock.request('screen');
@@ -651,6 +655,7 @@ async function syncWakeLock() {
         addLog('mic', 'screen: staying awake');
     } catch (error) {
         // Refused, for instance in Low Power Mode. Nothing else to try.
+        wakeLockRefused = true;
         addLog('error', `screen: can't keep awake (${error.name})`);
     }
     wakeLockAsking = false;
@@ -1397,7 +1402,10 @@ function setUpVoiceSettings() {
         save();
         syncWakeLock();
     });
-    document.addEventListener('visibilitychange', syncWakeLock);
+    document.addEventListener('visibilitychange', () => {
+        wakeLockRefused = false;
+        syncWakeLock();
+    });
 
     $('voice-support').textContent = [
         can.speak ? 'Reading aloud: yes.' : "Reading aloud: this browser can't.",

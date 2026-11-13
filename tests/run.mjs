@@ -10,6 +10,7 @@ import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
 import { createClipSpeaker } from '../src/clipspeaker.js';
 import { createModelVoice, modelNote, loadProgress, clipStats, timingNote } from '../src/modelvoice.js';
+import { createPlayer, wavBytes } from '../src/player.js';
 import { createCloudVoice, pcm16ToFloat32, costNote, cloudError, cloudNote, CLOUD } from '../src/cloudvoice.js';
 import { startConnect, connectStep, connectPrompt, findPage } from '../src/connect.js';
 import { createStory, listStories, overviewOf } from '../src/library.js';
@@ -1232,6 +1233,79 @@ await testAsync('a hiccup or silence loses one sentence, not the voice', async (
     const clip = other.clip('One.');
     quiet.audio(0, 0, 0, 0);
     assert.equal(await clip, null);
+});
+
+section('playing clips');
+
+test('clips become 16-bit WAV files', () => {
+    const bytes = wavBytes(new Float32Array([0, 0.5, -1, 2]), 24000);
+    const view = new DataView(bytes.buffer);
+    const text = (at, n) => String.fromCharCode(...bytes.slice(at, at + n));
+    assert.deepEqual([text(0, 4), text(8, 4), text(12, 4), text(36, 4)], ['RIFF', 'WAVE', 'fmt ', 'data']);
+    assert.equal(view.getUint32(4, true), bytes.length - 8);
+    assert.deepEqual([view.getUint16(20, true), view.getUint16(22, true), view.getUint32(24, true), view.getUint16(34, true)], [1, 1, 24000, 16]);
+    assert.equal(view.getUint32(40, true), 8);
+    assert.deepEqual([0, 1, 2, 3].map(i => view.getInt16(44 + i * 2, true)), [0, 16383, -32768, 32767]);
+});
+
+// A stand-in <audio> element, and timers the test fires by hand.
+function playerWith({ refuse = false } = {}) {
+    const events = [];
+    const pending = [];
+    const el = { src: '', played: [], paused: 0, setAttribute() {}, pause() { this.paused++; } };
+    el.play = () => {
+        el.played.push(el.src);
+        return refuse ? Promise.reject(Object.assign(new Error('no'), { name: 'NotAllowedError' })) : Promise.resolve();
+    };
+    let urls = 0;
+    const dropped = [];
+    const player = createPlayer({
+        makeAudio: () => el,
+        makeUrl: () => `blob:${++urls}`,
+        dropUrl: (u) => dropped.push(u),
+        onEvent: (name, detail) => events.push(`${name}: ${detail}`),
+        timers: { set: (fn) => { pending.push(fn); return pending.length - 1; }, clear: (i) => { pending[i] = null; } },
+    });
+    return { player, el, events, dropped, fireTimers: () => pending.splice(0).forEach(fn => fn?.()) };
+}
+const clip = { samples: new Float32Array(24000), sampleRate: 24000 };
+
+await testAsync('a clip plays through the one element, and resolves when it ends', async () => {
+    const { player, el, events, dropped } = playerWith();
+    player.unlock();
+    await tick();
+    assert.equal(player.state(), 'running');
+    const done = player.play(clip);
+    assert.equal(el.src, 'blob:2');
+    el.onended();
+    assert.equal(await done, true);
+    assert.match(events[0], /^played: 1\.0 s clip/);
+    assert.ok(dropped.includes('blob:1') && dropped.includes('blob:2'));    // no leaked files
+});
+
+await testAsync('a refused, broken, stopped or stuck clip resolves false and says why', async () => {
+    const refused = playerWith({ refuse: true });
+    assert.equal(await refused.player.play(clip), false);
+    assert.match(refused.events[0], /^blocked: NotAllowedError/);
+
+    const broken = playerWith();
+    const one = broken.player.play(clip);
+    broken.el.onerror();
+    assert.equal(await one, false);
+    assert.match(broken.events[0], /^failed:/);
+
+    const stopped = playerWith();
+    const two = stopped.player.play(clip);
+    stopped.player.stop();
+    assert.equal(await two, false);
+    assert.equal(stopped.el.paused, 1);
+    assert.deepEqual(stopped.events, []);
+
+    const stuck = playerWith();
+    const three = stuck.player.play(clip);
+    stuck.fireTimers();
+    assert.equal(await three, false);
+    assert.match(stuck.events[0], /^stuck: 1\.0 s clip still playing/);
 });
 
 section('two voices');
