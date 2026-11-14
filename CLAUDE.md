@@ -139,9 +139,10 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   part its own clip. `speak()` takes `partsOf`, and clip sources get `role`; only the
   cloud voice acts on it (a voice and a line of direction per role), the others ignore it.
 - Clips play through an `<audio>` element, not Web Audio. On Apple devices Web Audio is
-  "ambient" sound: the silent switch mutes it and microphone use can reroute it, while the
-  browser voice is still heard, so the cloud voice went silent there although Chromium
-  played it fine. The element is unlocked once from a tap and reused; each clip's outcome
+  "ambient" sound that the silent switch mutes, while the browser voice is still heard. (A
+  silent cloud voice once turned out to be the phone still routing to a car's CarPlay
+  audio; the browser voice took the phone speaker. Check output routing before the code.)
+  The element is unlocked once from a tap and reused; each clip's outcome
   (played, blocked, failed, stuck past its length) goes in the voice log, and any failure
   hands the sentence to the browser voice instead of leaving silence.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.
