@@ -154,7 +154,8 @@ export function zoomAround({ zoom, scrollLeft, scrollTop }, next, x, y) {
 // Returns the same shape as layoutGraph, with straight edges.
 
 export function forceLayout(story, {
-    nodeWidth = 180, nodeHeight = 48, length = 220, iterations = 300, gravity = 0.05, gap = 18, pad = 24,
+    nodeWidth = 180, nodeHeight = 48, length = 180, pull = 1.5, iterations = 300, centring = 0.05, gravity = 0.3,
+    gap = 18, pad = 24,
 } = {}) {
     const base = layoutGraph(story, { nodeWidth, nodeHeight });
     const count = base.nodes.length;
@@ -189,9 +190,17 @@ export function forceLayout(story, {
             const x = xs[a] - xs[b];
             const y = ys[a] - ys[b];
             const d = Math.max(0.01, Math.hypot(x, y));
-            const f = d / k;
+            const f = (d / k) * pull;
             dx[a] -= x * f; dy[a] -= y * f;
             dx[b] += x * f; dy[b] += y * f;
+            // Gravity: a choice settles below the page it's chosen from, so the
+            // story still reads roughly downwards. Only while it isn't already
+            // a spring's length below.
+            const below = ys[b] - ys[a];
+            if (gravity > 0 && below < k) {
+                const g = gravity * (k - below);
+                dy[a] -= g; dy[b] += g;
+            }
         }
         // A light pull to the middle, so separate pieces don't drift apart.
         const cx = xs.reduce((s, v) => s + v, 0) / count;
@@ -199,8 +208,8 @@ export function forceLayout(story, {
         // Each move is capped by a temperature that cools to nothing.
         const heat = k * 0.5 * (1 - step / iterations) + 0.5;
         for (let i = 0; i < count; i++) {
-            dx[i] += (cx - xs[i]) * gravity;
-            dy[i] += (cy - ys[i]) * gravity;
+            dx[i] += (cx - xs[i]) * centring;
+            dy[i] += (cy - ys[i]) * centring;
             const d = Math.hypot(dx[i], dy[i]);
             if (d === 0) continue;
             const move = Math.min(d, heat) / d;
@@ -249,7 +258,12 @@ export function forceLayout(story, {
         const [x2, y2] = borderPoint(b, a);
         return { from, to, x1, y1, x2, y2, straight: true };
     });
-    return { nodes, edges, width, height };
+    // The centre of mass: where the map balances, for centring the view.
+    const centre = {
+        x: nodes.reduce((sum, n) => sum + n.x + n.w / 2, 0) / count,
+        y: nodes.reduce((sum, n) => sum + n.y + n.h / 2, 0) / count,
+    };
+    return { nodes, edges, width, height, centre };
 }
 
 // Where the line from box a's centre to box b's centre leaves box a.

@@ -308,6 +308,22 @@ test('physics is the same every time, and joined nodes sit closer than strangers
     assert.ok(mean(joined) < mean(all) * 0.75, `${mean(joined)} vs ${mean(all)}`);
 });
 
+test('physics gravity makes more choices sit below the page they come from', () => {
+    const downwards = (layout) => {
+        const at = new Map(layout.nodes.map(n => [n.id, n]));
+        return layout.edges.filter(e => at.get(e.to).y > at.get(e.from).y).length;
+    };
+    assert.ok(downwards(forceLayout(sample)) > downwards(forceLayout(sample, { gravity: 0 })));
+});
+
+test('physics reports its centre of mass', () => {
+    const layout = forceLayout(sample);
+    const mean = (f) => layout.nodes.reduce((s, n) => s + f(n), 0) / layout.nodes.length;
+    assert.ok(Math.abs(layout.centre.x - mean(n => n.x + n.w / 2)) < 1e-9);
+    assert.ok(Math.abs(layout.centre.y - mean(n => n.y + n.h / 2)) < 1e-9);
+    assert.ok(layout.centre.x > 0 && layout.centre.x < layout.width && layout.centre.y > 0 && layout.centre.y < layout.height);
+});
+
 test('physics edges are straight, from box edge to box edge', () => {
     const layout = forceLayout(sample);
     const at = new Map(layout.nodes.map(n => [n.id, n]));

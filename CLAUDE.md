@@ -120,8 +120,10 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   are swallowed. Physics: Normal's scrolling and zoom over `forceLayout`, a
   Fruchterman-Reingold spring layout written here (no library, keeping "no dependencies"):
   deterministic because it starts from the layered layout, repulsion cut off beyond three
-  spring lengths, a light pull to the middle, then a pass that pushes overlapping boxes
-  apart; edges are straight. It's cached per story object. The map scrolls inside a
+  spring lengths, springs of length 180 at 1.5× strength, a light pull to the middle, light
+  gravity along each link (a choice settles below the page it comes from), then a pass
+  that pushes overlapping boxes apart; edges are straight. It opens with its centre of mass
+  (`layout.centre`) in the middle of the frame. It's cached per story object. The map scrolls inside a
   frame that ends at the window's bottom, so the look switch stays in reach. A green ring marks the start node and blue rings the endings.
 - A started story in voice mode holds a screen wake lock (the phone locking mid-page stops
   the reading), re-asked whenever the page becomes visible again, and released on leaving

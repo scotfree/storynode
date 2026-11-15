@@ -381,10 +381,15 @@ function placeMap({ centre = false } = {}) {
     sizeMap();
     if (centre) {
         // Keep the current node in view.
+        // Normal keeps the current node in view; Physics puts the map's centre
+        // of mass in the middle of the frame, so it opens balanced.
         const current = layout.nodes.find(b => b.id === currentId);
-        if (current) {
-            scroller.scrollLeft = Math.max(0, (current.x + current.w / 2) * map.zoom - scroller.clientWidth / 2);
-            scroller.scrollTop = Math.max(0, (current.y + current.h / 2) * map.zoom - scroller.clientHeight / 2);
+        const middle = map.look === 'physics' && layout.centre
+            ? layout.centre
+            : current && { x: current.x + current.w / 2, y: current.y + current.h / 2 };
+        if (middle) {
+            scroller.scrollLeft = Math.max(0, middle.x * map.zoom - scroller.clientWidth / 2);
+            scroller.scrollTop = Math.max(0, middle.y * map.zoom - scroller.clientHeight / 2);
         }
     }
 }
