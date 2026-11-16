@@ -38,7 +38,7 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   imports kokoro-js from a CDN on demand; the main side queues sentences and caches clips.
 - `src/cloudvoice.js`: OpenAI's speech API as a clip source, called straight from the
   browser with the listener's own key.
-- `src/player.js`: plays clips as WAV files through one reused `<audio>` element.
+- `src/player.js`: plays clips through Web Audio, logging each one's outcome.
 - `src/library.js`: the list of stories (built-in plus this browser's) and `createStory`.
 - `src/compose.js`: the spoken conversation for dictating a new node or story (title → read back →
   text in parts until "done" → read back → save), as a pure step function.
@@ -140,11 +140,12 @@ Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
   the story's if it is one of those, and "label: story words" is split at the colon, each
   part its own clip. `speak()` takes `partsOf`, and clip sources get `role`; only the
   cloud voice acts on it (a voice and a line of direction per role), the others ignore it.
-- Clips play through an `<audio>` element, not Web Audio. On Apple devices Web Audio is
-  "ambient" sound that the silent switch mutes, while the browser voice is still heard. (A
-  silent cloud voice once turned out to be the phone still routing to a car's CarPlay
-  audio; the browser voice took the phone speaker. Check output routing before the code.)
-  The element is unlocked once from a tap and reused; each clip's outcome
-  (played, blocked, failed, stuck past its length) goes in the voice log, and any failure
-  hands the sentence to the browser voice instead of leaving silence.
+- Clips play through Web Audio, not an `<audio>` element. The element was tried and
+  reverted: on an iPhone it put the page into media playback, which fought with the
+  microphone, so output volume dropped a few seconds in and recognition went deaf after an
+  answer or two, with either voice (the element was unlocked for both). Web Audio's cost
+  there is that the silent switch mutes it. (A silent cloud voice once turned out to be the
+  phone routing to a car's CarPlay audio; check output routing before the code.) Each
+  clip's outcome (played, blocked, failed, stuck past its length) goes in the voice log, and
+  any failure hands the sentence to the browser voice instead of leaving silence.
 - Keep pure logic in modules without DOM access, with tests in `tests/run.mjs`.

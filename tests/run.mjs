@@ -10,7 +10,7 @@ import { createLog, matchLines } from '../src/voicelog.js';
 import { angleAt, createSweep } from '../src/arc.js';
 import { createClipSpeaker } from '../src/clipspeaker.js';
 import { createModelVoice, modelNote, loadProgress, clipStats, timingNote } from '../src/modelvoice.js';
-import { createPlayer, wavBytes } from '../src/player.js';
+import { createPlayer } from '../src/player.js';
 import { createCloudVoice, pcm16ToFloat32, costNote, cloudError, cloudNote, CLOUD } from '../src/cloudvoice.js';
 import { startConnect, connectStep, connectPrompt, findPage } from '../src/connect.js';
 import { createStory, listStories, overviewOf } from '../src/library.js';
@@ -1253,68 +1253,56 @@ await testAsync('a hiccup or silence loses one sentence, not the voice', async (
 
 section('playing clips');
 
-test('clips become 16-bit WAV files', () => {
-    const bytes = wavBytes(new Float32Array([0, 0.5, -1, 2]), 24000);
-    const view = new DataView(bytes.buffer);
-    const text = (at, n) => String.fromCharCode(...bytes.slice(at, at + n));
-    assert.deepEqual([text(0, 4), text(8, 4), text(12, 4), text(36, 4)], ['RIFF', 'WAVE', 'fmt ', 'data']);
-    assert.equal(view.getUint32(4, true), bytes.length - 8);
-    assert.deepEqual([view.getUint16(20, true), view.getUint16(22, true), view.getUint32(24, true), view.getUint16(34, true)], [1, 1, 24000, 16]);
-    assert.equal(view.getUint32(40, true), 8);
-    assert.deepEqual([0, 1, 2, 3].map(i => view.getInt16(44 + i * 2, true)), [0, 16383, -32768, 32767]);
-});
-
-// A stand-in <audio> element, and timers the test fires by hand.
-function playerWith({ refuse = false } = {}) {
+// A stand-in Web Audio context, and timers the test fires by hand.
+function playerWith({ state = 'running', startThrows = false } = {}) {
     const events = [];
     const pending = [];
-    const el = { src: '', played: [], paused: 0, setAttribute() {}, pause() { this.paused++; } };
-    el.play = () => {
-        el.played.push(el.src);
-        return refuse ? Promise.reject(Object.assign(new Error('no'), { name: 'NotAllowedError' })) : Promise.resolve();
-    };
-    let urls = 0;
-    const dropped = [];
+    const sources = [];
+    class FakeContext {
+        constructor() { this.state = state; this.destination = {}; }
+        resume() { this.state = 'running'; }
+        createBuffer(_, length, rate) { return { length, rate, copyToChannel() {} }; }
+        createBufferSource() {
+            const s = { stopped: 0, connect() {}, start() { if (startThrows) throw Object.assign(new Error('x'), { name: 'InvalidStateError' }); }, stop() { this.stopped++; } };
+            sources.push(s);
+            return s;
+        }
+    }
     const player = createPlayer({
-        makeAudio: () => el,
-        makeUrl: () => `blob:${++urls}`,
-        dropUrl: (u) => dropped.push(u),
+        AudioContextClass: FakeContext,
         onEvent: (name, detail) => events.push(`${name}: ${detail}`),
         timers: { set: (fn) => { pending.push(fn); return pending.length - 1; }, clear: (i) => { pending[i] = null; } },
     });
-    return { player, el, events, dropped, fireTimers: () => pending.splice(0).forEach(fn => fn?.()) };
+    return { player, events, sources, fireTimers: () => pending.splice(0).forEach(fn => fn?.()) };
 }
 const clip = { samples: new Float32Array(24000), sampleRate: 24000 };
 
-await testAsync('a clip plays through the one element, and resolves when it ends', async () => {
-    const { player, el, events, dropped } = playerWith();
-    player.unlock();
-    await tick();
-    assert.equal(player.state(), 'running');
+await testAsync('a clip plays through Web Audio and resolves when it ends', async () => {
+    const { player, events, sources } = playerWith();
     const done = player.play(clip);
-    assert.equal(el.src, 'blob:2');
-    el.onended();
+    sources.at(-1).onended();
     assert.equal(await done, true);
     assert.match(events[0], /^played: 1\.0 s clip/);
-    assert.ok(dropped.includes('blob:1') && dropped.includes('blob:2'));    // no leaked files
 });
 
-await testAsync('a refused, broken, stopped or stuck clip resolves false and says why', async () => {
-    const refused = playerWith({ refuse: true });
-    assert.equal(await refused.player.play(clip), false);
-    assert.match(refused.events[0], /^blocked: NotAllowedError/);
+await testAsync('a locked, broken, stopped or stuck clip resolves false and says why', async () => {
+    const locked = playerWith({ state: 'suspended' });
+    assert.equal(await locked.player.play(clip), false);
+    assert.match(locked.events[0], /^blocked: sound is suspended/);
+    locked.player.unlock();
+    const now = locked.player.play(clip);
+    locked.sources.at(-1).onended();
+    assert.equal(await now, true);                      // a tap unlocks it
 
-    const broken = playerWith();
-    const one = broken.player.play(clip);
-    broken.el.onerror();
-    assert.equal(await one, false);
-    assert.match(broken.events[0], /^failed:/);
+    const broken = playerWith({ startThrows: true });
+    assert.equal(await broken.player.play(clip), false);
+    assert.match(broken.events[0], /^failed: InvalidStateError/);
 
     const stopped = playerWith();
     const two = stopped.player.play(clip);
     stopped.player.stop();
     assert.equal(await two, false);
-    assert.equal(stopped.el.paused, 1);
+    assert.equal(stopped.sources.at(-1).stopped, 1);
     assert.deepEqual(stopped.events, []);
 
     const stuck = playerWith();
@@ -1322,6 +1310,7 @@ await testAsync('a refused, broken, stopped or stuck clip resolves false and say
     stuck.fireTimers();
     assert.equal(await three, false);
     assert.match(stuck.events[0], /^stuck: 1\.0 s clip still playing/);
+    assert.equal(stuck.sources.at(-1).stopped, 1);
 });
 
 section('two voices');
