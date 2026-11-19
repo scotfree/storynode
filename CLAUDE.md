@@ -11,6 +11,17 @@ Amazon Alexa; the point now is cheap, in-browser voice play.
 
 Run: `python3 -m http.server 8000`. Test: `node tests/run.mjs` (Node 22+).
 
+## Workflow
+
+- Work directly on `main` until a live version is deployed (Scot, 2026-11-09). There's
+  nothing live to protect yet, so don't ask about feature branches before then; Scot
+  decides when something counts as live.
+- GitHub Pages serves `main` at https://scotfree.github.io/storynode/. It's a test deploy,
+  not the live version, and every push redeploys it, so commit and push only when asked.
+- Several surfaces push to `main` (terminal checkouts, cloud sessions), so run `git fetch`
+  at the start of a session; a checkout here once fell 27 commits behind.
+- Nothing tests the page in a real browser yet; #2 has a headless-Chrome driver to rebuild.
+
 ## Layout
 
 - `storynodelogo.png`: the logo as drawn (black on transparent). `logo.png` (the top bar,
